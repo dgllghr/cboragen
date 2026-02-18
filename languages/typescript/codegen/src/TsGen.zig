@@ -9,9 +9,12 @@ schema: Ast.Schema,
 arena: std.mem.Allocator,
 indent: u32,
 varint_as_number: bool,
+loop_depth: u32,
+
+/// Namespace → Schema for imported schemas.
+imports: std.StringHashMap(Ast.Schema),
 
 /// Inline types discovered during pass 1, keyed by pointer identity.
-/// Value is the generated name (e.g. "Node_link", "Event_click").
 inline_struct_names: std.AutoHashMap(*const Ast.StructDef, []const u8),
 inline_enum_names: std.AutoHashMap(*const Ast.EnumDef, []const u8),
 inline_union_names: std.AutoHashMap(*const Ast.UnionDef, []const u8),
@@ -29,13 +32,21 @@ pub const Options = struct {
     varint_as_number: bool = false,
 };
 
-pub fn init(writer: std.io.AnyWriter, schema: Ast.Schema, arena: std.mem.Allocator, options: Options) TsGen {
+pub fn init(
+    writer: std.io.AnyWriter,
+    schema: Ast.Schema,
+    imports: std.StringHashMap(Ast.Schema),
+    arena: std.mem.Allocator,
+    options: Options,
+) TsGen {
     return .{
         .writer = writer,
         .schema = schema,
         .arena = arena,
         .indent = 0,
         .varint_as_number = options.varint_as_number,
+        .loop_depth = 0,
+        .imports = imports,
         .inline_struct_names = std.AutoHashMap(*const Ast.StructDef, []const u8).init(arena),
         .inline_enum_names = std.AutoHashMap(*const Ast.EnumDef, []const u8).init(arena),
         .inline_union_names = std.AutoHashMap(*const Ast.UnionDef, []const u8).init(arena),
@@ -48,7 +59,13 @@ pub fn init(writer: std.io.AnyWriter, schema: Ast.Schema, arena: std.mem.Allocat
 const Error = std.io.AnyWriter.Error || std.mem.Allocator.Error;
 
 pub fn generate(self: *TsGen) Error!void {
-    // Pass 1: collect inline types
+    // Pass 1: collect inline types — imported schemas first, then main
+    var import_it = self.imports.iterator();
+    while (import_it.next()) |entry| {
+        for (entry.value_ptr.definitions) |def| {
+            try self.collectInlineTypes(def.name, def.ty);
+        }
+    }
     for (self.schema.definitions) |def| {
         try self.collectInlineTypes(def.name, def.ty);
     }
@@ -72,7 +89,14 @@ pub fn generate(self: *TsGen) Error!void {
     for (self.inline_unions.items) |entry| {
         try self.emitUnionType(entry.name, entry.def, null);
     }
-    // Top-level types
+    // Imported top-level types
+    var import_it2 = self.imports.iterator();
+    while (import_it2.next()) |entry| {
+        for (entry.value_ptr.definitions) |def| {
+            try self.emitTypeDef(def);
+        }
+    }
+    // Main schema top-level types
     for (self.schema.definitions) |def| {
         try self.emitTypeDef(def);
     }
@@ -87,6 +111,12 @@ pub fn generate(self: *TsGen) Error!void {
     }
     for (self.inline_unions.items) |entry| {
         try self.emitUnionEncoder(entry.name, entry.def);
+    }
+    var import_it3 = self.imports.iterator();
+    while (import_it3.next()) |entry| {
+        for (entry.value_ptr.definitions) |def| {
+            try self.emitEncoderForDef(def);
+        }
     }
     for (self.schema.definitions) |def| {
         try self.emitEncoderForDef(def);
@@ -103,6 +133,12 @@ pub fn generate(self: *TsGen) Error!void {
     for (self.inline_unions.items) |entry| {
         try self.emitUnionDecoder(entry.name, entry.def);
     }
+    var import_it4 = self.imports.iterator();
+    while (import_it4.next()) |entry| {
+        for (entry.value_ptr.definitions) |def| {
+            try self.emitDecoderForDef(def);
+        }
+    }
     for (self.schema.definitions) |def| {
         try self.emitDecoderForDef(def);
     }
@@ -115,18 +151,11 @@ pub fn generate(self: *TsGen) Error!void {
 fn collectInlineTypes(self: *TsGen, parent_name: []const u8, ty: Ast.TypeExpr) Error!void {
     switch (ty) {
         .struct_ => |s| {
-            if (!self.inline_struct_names.contains(s)) {
-                // Only register as inline if this is not the top-level type of a TypeDef
-                // (checked by caller context — we always register here, top-level ones
-                // just get the parent name which matches the TypeDef name)
-            }
             for (s.fields) |field| {
                 try self.collectInlineTypesField(parent_name, field);
             }
         },
-        .enum_ => |e| {
-            _ = e;
-        },
+        .enum_ => {},
         .union_ => |u| {
             for (u.variants) |v| {
                 if (v.payload) |payload| {
@@ -151,7 +180,6 @@ fn collectInlineTypesField(self: *TsGen, parent_name: []const u8, field: Ast.Fie
             const name = try std.fmt.allocPrint(self.arena, "{s}_{s}", .{ parent_name, fname });
             try self.inline_struct_names.put(s, name);
             try self.inline_structs.append(self.arena, .{ .name = name, .def = s });
-            // Recurse into the inline struct's fields
             for (s.fields) |f| {
                 try self.collectInlineTypesField(name, f);
             }
@@ -228,7 +256,6 @@ fn collectInlineTypesElement(self: *TsGen, parent_name: []const u8, field_name: 
 }
 
 fn collectInlineTypesOption(self: *TsGen, parent_name: []const u8, field_name: []const u8, ty: Ast.TypeExpr) Error!void {
-    // Unwrap optionals and look inside for inline types
     switch (ty) {
         .option => |o| try self.collectInlineTypesOption(parent_name, field_name, o.child),
         else => try self.collectInlineTypesElement(parent_name, field_name, ty),
@@ -280,7 +307,6 @@ fn emitTypeDef(self: *TsGen, def: Ast.TypeDef) Error!void {
         .enum_ => |e| try self.emitEnumType(def.name, e, def.doc),
         .union_ => |u| try self.emitUnionType(def.name, u, def.doc),
         else => {
-            // Type alias
             try self.emitDoc(def.doc);
             try self.writer.print("export type {s} = ", .{def.name});
             try self.emitTypeRef(def.ty);
@@ -346,7 +372,6 @@ fn emitTypeRef(self: *TsGen, ty: Ast.TypeExpr) Error!void {
             if (self.inline_struct_names.get(s)) |name| {
                 try self.writer.writeAll(name);
             } else {
-                // Should not happen for well-formed schemas
                 try self.writer.writeAll("unknown /* inline struct */");
             }
         },
@@ -369,25 +394,24 @@ fn emitTypeRef(self: *TsGen, ty: Ast.TypeExpr) Error!void {
             try self.writer.writeAll(" | null");
         },
         .array => |a| {
-            switch (a.*) {
-                .variable, .fixed, .external_len => {
-                    try self.emitTypeRef(a.getElement());
-                    try self.writer.writeAll("[]");
-                },
-            }
+            try self.emitTypeRef(a.getElement());
+            try self.writer.writeAll("[]");
         },
         .named => |n| {
             try self.writer.writeAll(n.name);
         },
         .qualified => |q| {
-            try self.writer.print("{s}.{s} /* TODO: cross-module import */", .{ q.namespace, q.name });
+            if (self.resolveQualified(q.namespace, q.name)) |_| {
+                try self.writer.writeAll(q.name);
+            } else {
+                try self.writer.print("{s}.{s} /* TODO: unresolved import */", .{ q.namespace, q.name });
+            }
         },
     }
 }
 
 fn emitDoc(self: *TsGen, doc: ?[]const u8) Error!void {
     const text = doc orelse return;
-    // Check if multiline
     if (std.mem.indexOfScalar(u8, text, '\n')) |_| {
         try self.writer.writeAll("/**\n");
         var it = std.mem.splitScalar(u8, text, '\n');
@@ -410,24 +434,23 @@ fn emitEncoderForDef(self: *TsGen, def: Ast.TypeDef) Error!void {
         .enum_ => |e| try self.emitEnumEncoder(def.name, e),
         .union_ => |u| try self.emitUnionEncoder(def.name, u),
         else => {
-            // Type alias — public encode delegates to primitive/inner
+            // Type alias — generate internal + public encoder
+            try self.writer.print("\nfunction _enc{s}(v: {s}): void {{ ", .{ def.name, def.name });
+            try self.emitEncodeExpr(def.ty, "v");
+            try self.writer.writeAll("; }\n");
             try self.writer.print("\nexport function encode{s}(value: {s}): Uint8Array {{\n", .{ def.name, def.name });
-            try self.writer.writeAll("  _reset();\n  ");
-            try self.emitEncodeExpr(def.ty, "value");
-            try self.writer.writeAll(";\n  return _finish();\n}\n");
+            try self.writer.print("  _reset();\n  _enc{s}(value);\n  return _finish();\n}}\n", .{def.name});
         },
     }
 }
 
 fn emitStructEncoder(self: *TsGen, name: []const u8, def: *const Ast.StructDef) Error!void {
-    // Internal encoder (no reset/finish)
     try self.writer.print("\nfunction _enc{s}(v: {s}): void {{\n", .{ name, name });
     if (def.fields.len == 0) {
         try self.writer.writeAll("  _eArrHdr(0);\n");
     } else {
         const max_rank = self.maxRank(def);
         try self.writer.print("  _eArrHdr({d});\n", .{max_rank + 1});
-        // Encode fields in rank order, filling gaps with null
         var rank: u64 = 0;
         while (rank <= max_rank) : (rank += 1) {
             if (self.findFieldByRank(def, rank)) |field| {
@@ -442,8 +465,6 @@ fn emitStructEncoder(self: *TsGen, name: []const u8, def: *const Ast.StructDef) 
         }
     }
     try self.writer.writeAll("}\n");
-
-    // Public encoder
     try self.writer.print("\nexport function encode{s}(value: {s}): Uint8Array {{\n", .{ name, name });
     try self.writer.print("  _reset();\n  _enc{s}(value);\n  return _finish();\n}}\n", .{name});
 }
@@ -470,7 +491,6 @@ fn emitUnionEncoder(self: *TsGen, name: []const u8, def: *const Ast.UnionDef) Er
         try self.writer.writeAll("      break;\n");
     }
     try self.writer.writeAll("  }\n}\n");
-
     try self.writer.print("\nexport function encode{s}(value: {s}): Uint8Array {{\n", .{ name, name });
     try self.writer.print("  _reset();\n  _enc{s}(value);\n  return _finish();\n}}\n", .{name});
 }
@@ -527,28 +547,33 @@ fn emitEncodeExpr(self: *TsGen, ty: Ast.TypeExpr, access: []const u8) Error!void
                 try self.writer.writeAll(")");
             }
         },
-        .array => |a| switch (a.*) {
-            .variable => |v| {
-                try self.writer.print("_eArrHdr(({s}).length)", .{access});
-                try self.writer.print(";\n  for (let _i = 0; _i < ({s}).length; _i++) {{ ", .{access});
-                const elem_access = try std.fmt.allocPrint(self.arena, "({s})[_i]", .{access});
-                try self.emitEncodeExpr(v.element, elem_access);
-                try self.writer.writeAll("; }");
-            },
-            .fixed => |f| {
-                try self.writer.print("_eArrHdr({d})", .{f.len});
-                try self.writer.print(";\n  for (let _i = 0; _i < {d}; _i++) {{ ", .{f.len});
-                const elem_access = try std.fmt.allocPrint(self.arena, "({s})[_i]", .{access});
-                try self.emitEncodeExpr(f.element, elem_access);
-                try self.writer.writeAll("; }");
-            },
-            .external_len => |e| {
-                try self.writer.writeAll("_wb(0x9f)");
-                try self.writer.print(";\n  for (let _i = 0; _i < ({s}).length; _i++) {{ ", .{access});
-                const elem_access = try std.fmt.allocPrint(self.arena, "({s})[_i]", .{access});
-                try self.emitEncodeExpr(e.element, elem_access);
-                try self.writer.writeAll("; }\n  _wb(0xff)");
-            },
+        .array => |a| {
+            const lv = try std.fmt.allocPrint(self.arena, "_i{d}", .{self.loop_depth});
+            self.loop_depth += 1;
+            switch (a.*) {
+                .variable => |v| {
+                    try self.writer.print("_eArrHdr(({s}).length)", .{access});
+                    try self.writer.print(";\n  for (let {s} = 0; {s} < ({s}).length; {s}++) {{ ", .{ lv, lv, access, lv });
+                    const elem_access = try std.fmt.allocPrint(self.arena, "({s})[{s}]", .{ access, lv });
+                    try self.emitEncodeExpr(v.element, elem_access);
+                    try self.writer.writeAll("; }");
+                },
+                .fixed => |f| {
+                    try self.writer.print("_eArrHdr({d})", .{f.len});
+                    try self.writer.print(";\n  for (let {s} = 0; {s} < {d}; {s}++) {{ ", .{ lv, lv, f.len, lv });
+                    const elem_access = try std.fmt.allocPrint(self.arena, "({s})[{s}]", .{ access, lv });
+                    try self.emitEncodeExpr(f.element, elem_access);
+                    try self.writer.writeAll("; }");
+                },
+                .external_len => |e| {
+                    try self.writer.writeAll("_wb(0x9f)");
+                    try self.writer.print(";\n  for (let {s} = 0; {s} < ({s}).length; {s}++) {{ ", .{ lv, lv, access, lv });
+                    const elem_access = try std.fmt.allocPrint(self.arena, "({s})[{s}]", .{ access, lv });
+                    try self.emitEncodeExpr(e.element, elem_access);
+                    try self.writer.writeAll("; }\n  _wb(0xff)");
+                },
+            }
+            self.loop_depth -= 1;
         },
         .struct_ => |s| {
             if (self.inline_struct_names.get(s)) |sname| {
@@ -569,7 +594,11 @@ fn emitEncodeExpr(self: *TsGen, ty: Ast.TypeExpr, access: []const u8) Error!void
             try self.writer.print("_enc{s}({s})", .{ n.name, access });
         },
         .qualified => |q| {
-            try self.writer.print("undefined as any /* TODO: encode {s}.{s} */", .{ q.namespace, q.name });
+            if (self.resolveQualified(q.namespace, q.name)) |_| {
+                try self.writer.print("_enc{s}({s})", .{ q.name, access });
+            } else {
+                try self.writer.print("undefined as any /* TODO: encode {s}.{s} */", .{ q.namespace, q.name });
+            }
         },
     }
 }
@@ -584,17 +613,17 @@ fn emitDecoderForDef(self: *TsGen, def: Ast.TypeDef) Error!void {
         .enum_ => |e| try self.emitEnumDecoder(def.name, e),
         .union_ => |u| try self.emitUnionDecoder(def.name, u),
         else => {
-            // Type alias — public decode
-            try self.writer.print("\nexport function decode{s}(data: Uint8Array): {s} {{\n", .{ def.name, def.name });
-            try self.writer.writeAll("  _dInit(data);\n  return ");
+            // Type alias — generate internal + public decoder
+            try self.writer.print("\nfunction _dec{s}(): {s} {{ return ", .{ def.name, def.name });
             try self.emitDecodeExpr(def.ty);
-            try self.writer.writeAll(";\n}\n");
+            try self.writer.writeAll("; }\n");
+            try self.writer.print("\nexport function decode{s}(data: Uint8Array): {s} {{\n", .{ def.name, def.name });
+            try self.writer.print("  _dInit(data);\n  return _dec{s}();\n}}\n", .{def.name});
         },
     }
 }
 
 fn emitStructDecoder(self: *TsGen, name: []const u8, def: *const Ast.StructDef) Error!void {
-    // Internal decoder
     try self.writer.print("\nfunction _dec{s}(): {s} {{\n", .{ name, name });
     try self.writer.writeAll("  const _al = _dArrHdr();\n");
 
@@ -604,7 +633,6 @@ fn emitStructDecoder(self: *TsGen, name: []const u8, def: *const Ast.StructDef) 
     } else {
         const max_rank = self.maxRank(def);
 
-        // Declare field variables
         for (def.fields) |field| {
             const fname = try self.sanitizeFieldName(field.name);
             try self.writer.print("  let _{s}: ", .{fname});
@@ -616,7 +644,6 @@ fn emitStructDecoder(self: *TsGen, name: []const u8, def: *const Ast.StructDef) 
             }
         }
 
-        // Decode by rank
         var rank: u64 = 0;
         while (rank <= max_rank) : (rank += 1) {
             try self.writer.print("  if (_al > {d}) ", .{rank});
@@ -630,10 +657,8 @@ fn emitStructDecoder(self: *TsGen, name: []const u8, def: *const Ast.StructDef) 
             }
         }
 
-        // Skip unknown trailing fields
         try self.writer.print("  for (let _i = {d}; _i < _al; _i++) _dSkip();\n", .{max_rank + 1});
 
-        // Build result object with fields in declaration order
         try self.writer.writeAll("  return { ");
         for (def.fields, 0..) |field, idx| {
             const fname = try self.sanitizeFieldName(field.name);
@@ -643,7 +668,6 @@ fn emitStructDecoder(self: *TsGen, name: []const u8, def: *const Ast.StructDef) 
         try self.writer.writeAll(" };\n}\n");
     }
 
-    // Public decoder
     try self.writer.print("\nexport function decode{s}(data: Uint8Array): {s} {{\n", .{ name, name });
     try self.writer.print("  _dInit(data);\n  return _dec{s}();\n}}\n", .{name});
 }
@@ -660,10 +684,7 @@ fn emitUnionDecoder(self: *TsGen, name: []const u8, def: *const Ast.UnionDef) Er
     try self.writer.writeAll("  const _b = _rb();\n");
     try self.writer.writeAll("  const _maj = _b >> 5;\n");
 
-    // Unit variants come as unsigned integers (major 0)
-    // Payload variants come as tags (major 6)
     try self.writer.writeAll("  if (_maj === 6) {\n");
-    try self.writer.writeAll("    // payload variant — read tag number\n");
     try self.writer.writeAll("    const _ai = _b & 0x1f;\n");
     try self.writer.writeAll("    let _tag: number;\n");
     try self.writer.writeAll("    if (_ai <= 23) _tag = _ai;\n");
@@ -683,7 +704,6 @@ fn emitUnionDecoder(self: *TsGen, name: []const u8, def: *const Ast.UnionDef) Er
     try self.writer.writeAll("    }\n");
     try self.writer.writeAll("  }\n");
 
-    // Unit variants — major 0 unsigned int
     try self.writer.writeAll("  if (_maj === 0) {\n");
     try self.writer.writeAll("    const _ai = _b & 0x1f;\n");
     try self.writer.writeAll("    let _tag: number;\n");
@@ -704,8 +724,6 @@ fn emitUnionDecoder(self: *TsGen, name: []const u8, def: *const Ast.UnionDef) Er
 
     try self.writer.print("  throw new Error(\"expected union {s}\");\n", .{name});
     try self.writer.writeAll("}\n");
-
-    // Public decoder
     try self.writer.print("\nexport function decode{s}(data: Uint8Array): {s} {{\n", .{ name, name });
     try self.writer.print("  _dInit(data);\n  return _dec{s}();\n}}\n", .{name});
 }
@@ -790,7 +808,11 @@ fn emitDecodeExpr(self: *TsGen, ty: Ast.TypeExpr) Error!void {
             try self.writer.print("_dec{s}()", .{n.name});
         },
         .qualified => |q| {
-            try self.writer.print("undefined as any /* TODO: decode {s}.{s} */", .{ q.namespace, q.name });
+            if (self.resolveQualified(q.namespace, q.name)) |_| {
+                try self.writer.print("_dec{s}()", .{q.name});
+            } else {
+                try self.writer.print("undefined as any /* TODO: decode {s}.{s} */", .{ q.namespace, q.name });
+            }
         },
     }
 }
@@ -829,4 +851,13 @@ fn sanitizeFieldName(self: *TsGen, name: []const u8) Error![]const u8 {
         return try std.fmt.allocPrint(self.arena, "_{s}", .{name});
     }
     return name;
+}
+
+/// Look up a qualified type reference in imported schemas.
+fn resolveQualified(self: *TsGen, namespace: []const u8, name: []const u8) ?Ast.TypeDef {
+    const imported_schema = self.imports.get(namespace) orelse return null;
+    for (imported_schema.definitions) |def| {
+        if (std.mem.eql(u8, def.name, name)) return def;
+    }
+    return null;
 }

@@ -58,8 +58,24 @@ pub fn main() !void {
     var gen_arena = std.heap.ArenaAllocator.init(allocator);
     defer gen_arena.deinit();
 
+    // Resolve imports transitively
+    var imports = std.StringHashMap(parser.Ast.Schema).init(gen_arena.allocator());
+    var import_results: std.ArrayList(parser.ParseResult) = .{};
+    defer {
+        for (import_results.items) |*r| r.deinit();
+        import_results.deinit(allocator);
+    }
+    var import_sources: std.ArrayList([]const u8) = .{};
+    defer {
+        for (import_sources.items) |s| allocator.free(s);
+        import_sources.deinit(allocator);
+    }
+
+    const base_dir = std.fs.path.dirname(file_path) orelse ".";
+    try resolveImports(allocator, &imports, &import_results, &import_sources, base_dir, schema.imports);
+
     const stdout = std.fs.File.stdout().deprecatedWriter();
-    var gen = TsGen.init(stdout.any(), schema, gen_arena.allocator(), .{
+    var gen = TsGen.init(stdout.any(), schema, imports, gen_arena.allocator(), .{
         .varint_as_number = varint_as_number,
     });
     gen.generate() catch |err| {
@@ -67,6 +83,49 @@ pub fn main() !void {
         try stderr.print("error: code generation failed: {s}\n", .{@errorName(err)});
         std.process.exit(1);
     };
+}
+
+fn resolveImports(
+    allocator: std.mem.Allocator,
+    imports: *std.StringHashMap(parser.Ast.Schema),
+    import_results: *std.ArrayList(parser.ParseResult),
+    import_sources: *std.ArrayList([]const u8),
+    base_dir: []const u8,
+    schema_imports: []const parser.Ast.Import,
+) !void {
+    for (schema_imports) |imp| {
+        if (imports.contains(imp.namespace)) continue;
+
+        // Resolve relative import path against base directory
+        const import_path = try std.fs.path.resolve(allocator, &.{ base_dir, imp.path });
+        defer allocator.free(import_path);
+
+        const imp_source = std.fs.cwd().readFileAlloc(allocator, import_path, 10 * 1024 * 1024) catch |err| {
+            const stderr = std.fs.File.stderr().deprecatedWriter();
+            stderr.print("warning: cannot read import '{s}': {s}\n", .{ imp.path, @errorName(err) }) catch {};
+            continue;
+        };
+        try import_sources.append(allocator, imp_source);
+
+        var imp_result = parser.parse(allocator, imp_source);
+        if (imp_result.hasErrors()) {
+            const stderr = std.fs.File.stderr().deprecatedWriter();
+            parser.renderDiagnostics(stderr.any(), imp_source, imp.path, imp_result.diagnostics.slice(), true) catch {};
+            imp_result.deinit();
+            continue;
+        }
+
+        if (imp_result.schema) |imp_schema| {
+            try imports.put(imp.namespace, imp_schema);
+            try import_results.append(allocator, imp_result);
+
+            // Recursively resolve transitive imports
+            const imp_base_dir = std.fs.path.dirname(import_path) orelse ".";
+            try resolveImports(allocator, imports, import_results, import_sources, imp_base_dir, imp_schema.imports);
+        } else {
+            imp_result.deinit();
+        }
+    }
 }
 
 fn printUsage() !void {

@@ -1,0 +1,89 @@
+// Test schema for roundtrip encode/decode verification.
+// Covers all primitive types, containers, optionals, and composites.
+
+/// All primitive types in one struct
+Primitives = struct {
+    0 b: bool
+    1 u8v: u8
+    2 u16v: u16
+    3 u32v: u32
+    4 u64v: u64
+    5 i8v: i8
+    6 i16v: i16
+    7 i32v: i32
+    8 i64v: i64
+    9 f32v: f32
+    10 f64v: f64
+    11 uvar: uvarint
+    12 ivar: ivarint
+    13 str: string
+    14 bin: bytes
+}
+
+/// Struct with optional fields
+WithOptionals = struct {
+    0 required: string
+    1 maybe: ?u32
+    2 maybeStr: ?string
+}
+
+/// Simple enum
+Color = enum {
+    0 Red
+    1 Green
+    2 Blue
+}
+
+/// Union with unit and payload variants
+Shape = union {
+    0 circle: f64
+    1 rect: struct {
+        0 w: f64
+        1 h: f64
+    }
+    2 point
+}
+
+/// Variable-length array wrapper
+Numbers = struct {
+    0 values: []i32
+}
+
+/// Fixed-length array wrapper
+Vec3 = struct {
+    0 xyz: [3]f64
+}
+
+/// External-length array wrapper
+TimeSeries = struct {
+    0 count: u32
+    1 timestamps: [.count]i64
+    2 values: [.count]f64
+}
+
+/// Named type references
+ColoredShape = struct {
+    0 color: Color
+    1 shape: Shape
+}
+
+/// Type alias
+Id = u64
+
+/// Struct referencing an alias
+Entity = struct {
+    0 id: Id
+    1 name: string
+}
+
+/// Nested arrays
+Matrix = struct {
+    0 rows: [][]f64
+}
+
+/// Struct with gaps in ranks
+Sparse = struct {
+    0 first: u32
+    5 second: string
+    10 third: bool
+}
