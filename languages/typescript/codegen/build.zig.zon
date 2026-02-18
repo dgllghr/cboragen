@@ -9,6 +9,6 @@
         "src",
     },
     .dependencies = .{
-        .parser = .{ .path = "../parser" },
+        .parser = .{ .path = "../../../parser" },
     },
 }
