@@ -1,0 +1,30 @@
+common = @import("common/types.cbg")
+models = @import("models/user.cbg")
+
+/// Request to get a user by ID
+GetUserRequest = struct {
+    0 id: common.Id
+}
+
+/// Response containing a user
+GetUserResponse = struct {
+    0 status: common.Status
+    1 user: ?models.User
+}
+
+/// Request to list users with pagination
+ListUsersRequest = struct {
+    0 offset: u32
+    1 limit: u32
+}
+
+/// Response containing a page of users
+ListUsersResponse = struct {
+    0 status: common.Status
+    1 users: models.UserList
+}
+
+/// Bulk operation request
+BatchRequest = struct {
+    0 ids: []common.Id
+}

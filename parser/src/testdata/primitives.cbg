@@ -1,0 +1,22 @@
+// All primitive type aliases
+
+BoolAlias = bool
+StringAlias = string
+BytesAlias = bytes
+
+U8Alias = u8
+U16Alias = u16
+U32Alias = u32
+U64Alias = u64
+
+I8Alias = i8
+I16Alias = i16
+I32Alias = i32
+I64Alias = i64
+
+F16Alias = f16
+F32Alias = f32
+F64Alias = f64
+
+UvarintAlias = uvarint
+IvarintAlias = ivarint

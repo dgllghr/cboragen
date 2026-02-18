@@ -1,0 +1,39 @@
+/// Single-line doc comment
+Simple = u64
+
+/// Multi-line doc comment
+/// that spans several lines
+/// and describes the type in detail
+Documented = struct {
+    /// Field with a doc comment
+    0 name: string
+
+    /// Another documented field
+    /// with two lines
+    1 value: u64
+}
+
+/// Documented enum
+Direction = enum {
+    /// Points north
+    0 North
+    /// Points south
+    1 South
+    /// Points east
+    2 East
+    /// Points west
+    3 West
+}
+
+/// Documented union
+Shape = union {
+    /// A circle with radius
+    0 circle: f64
+    /// A rectangle with width and height
+    1 rect: struct {
+        0 width: f64
+        1 height: f64
+    }
+    /// A point (no payload)
+    2 point
+}

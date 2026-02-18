@@ -1,0 +1,42 @@
+/// A 2D coordinate
+Point = struct {
+    0 x: f64
+    1 y: f64
+}
+
+/// A 3D coordinate
+Point3D = struct {
+    0 x: f64
+    1 y: f64
+    2 z: f64
+}
+
+/// A person with optional email
+Person = struct {
+    0 name: string
+    1 age: u32
+    2 email: ?string
+}
+
+/// An empty struct (valid edge case)
+Empty = struct {}
+
+/// Struct using commas as separators
+WithCommas = struct {
+    0 a: u64,
+    1 b: string,
+    2 c: bool
+}
+
+/// Struct with mixed separators (comma + newline)
+MixedSeparators = struct {
+    0 x: f64,
+    1 y: f64
+    2 z: f64
+}
+
+/// Struct with numeric field names
+Uuid = struct {
+    0 0: u64
+    1 1: u64
+}

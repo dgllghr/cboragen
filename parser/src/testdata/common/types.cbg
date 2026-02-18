@@ -1,0 +1,13 @@
+/// Common ID type
+Id = u64
+
+/// Timestamp in milliseconds since epoch
+Timestamp = i64
+
+/// Response status codes
+Status = enum {
+    0 Ok
+    1 Error
+    2 NotFound
+    3 Unauthorized
+}

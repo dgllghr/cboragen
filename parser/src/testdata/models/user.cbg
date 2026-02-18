@@ -1,0 +1,23 @@
+common = @import("../common/types.cbg")
+
+/// A user in the system
+User = struct {
+    /// Unique identifier
+    0 id: common.Id
+
+    /// Display name
+    1 name: string
+
+    /// When the user was created
+    2 createdAt: common.Timestamp
+
+    /// Optional avatar URL
+    3 avatar: ?string
+}
+
+/// A list of users with pagination
+UserList = struct {
+    0 users: []User
+    1 total: u32
+    2 offset: u32
+}

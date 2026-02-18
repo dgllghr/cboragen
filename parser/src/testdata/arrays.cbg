@@ -1,0 +1,35 @@
+/// Variable-length array of integers
+IntList = []i32
+
+/// Variable-length array of strings
+StringList = []string
+
+/// Fixed-length byte array (e.g. SHA-256 hash)
+Hash256 = [32]u8
+
+/// Fixed-length IPv6 address
+Ipv6Bytes = [16]u8
+
+/// Struct with external-length arrays
+MetricBatch = struct {
+    0 len: u32
+    1 timestamps: [.len]u64
+    2 values: [.len]f64
+    3 labels: [.len]string
+}
+
+/// Nested array types
+Matrix = struct {
+    0 rows: [][]f64
+}
+
+/// Optional array
+MaybeTags = ?[]string
+
+/// Array of structs
+Polygon = struct {
+    0 vertices: []struct {
+        0 x: f64
+        1 y: f64
+    }
+}

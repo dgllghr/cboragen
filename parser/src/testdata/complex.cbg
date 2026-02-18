@@ -1,0 +1,67 @@
+// A complex schema exercising many features at once
+
+/// Document metadata
+Metadata = struct {
+    0 author: string
+    1 createdAt: i64
+    2 updatedAt: ?i64
+    3 tags: []string
+    4 version: u32
+}
+
+/// A rich text node
+Node = union {
+    0 text: string
+    1 bold: string
+    2 italic: string
+    3 link: struct {
+        0 href: string
+        1 text: string
+    }
+    4 image: struct {
+        0 src: string
+        1 alt: ?string
+        2 width: ?u32
+        3 height: ?u32
+    }
+    5 list: struct {
+        0 ordered: bool
+        1 items: []string
+    }
+}
+
+/// Permission levels
+Permission = enum {
+    0 Read
+    1 Write
+    2 Admin
+}
+
+/// Access control entry
+Acl = struct {
+    0 userId: u64
+    1 permission: Permission
+}
+
+/// A document combining everything
+Document = struct {
+    0 id: u64
+    1 title: string
+    2 content: []Node
+    3 metadata: Metadata
+    4 acl: []Acl
+    5 parentId: ?u64
+    6 archived: bool
+}
+
+/// Sensor reading batch with external-length arrays
+SensorBatch = struct {
+    0 sensorId: u64
+    1 count: u32
+    2 timestamps: [.count]i64
+    3 values: [.count]f64
+    4 flags: [.count]u8
+}
+
+/// Deeply nested optional
+MaybeOptional = ?????u64

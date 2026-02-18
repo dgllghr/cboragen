@@ -1,0 +1,37 @@
+/// A result type with payload variants
+Result = union {
+    0 Ok: u64
+    1 Err: string
+}
+
+/// A message that can carry different payloads
+Message = union {
+    0 text: string
+    1 binary: bytes
+    2 ping
+}
+
+/// Network address variants
+IpAddress = union {
+    0 V4: struct { 0 octets: u32 }
+    1 V6: struct { 0 high: u64, 1 low: u64 }
+}
+
+/// Union with inline struct payloads
+Event = union {
+    0 click: struct {
+        0 x: i32
+        1 y: i32
+        2 button: u8
+    }
+    1 keypress: struct {
+        0 code: u32
+        1 shift: bool
+        2 ctrl: bool
+    }
+    2 resize: struct {
+        0 width: u32
+        1 height: u32
+    }
+    3 close
+}

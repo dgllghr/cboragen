@@ -1,0 +1,25 @@
+/// HTTP methods
+Method = enum {
+    0 Get
+    1 Post
+    2 Put
+    3 Delete
+    4 Patch
+}
+
+/// Log severity levels
+LogLevel = enum {
+    0 Trace
+    1 Debug
+    2 Info
+    3 Warn
+    4 Error
+    5 Fatal
+}
+
+/// Enum with comma separators
+Color = enum {
+    0 Red,
+    1 Green,
+    2 Blue
+}
