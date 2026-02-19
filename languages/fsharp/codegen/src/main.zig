@@ -1,6 +1,7 @@
 const std = @import("std");
 const parser = @import("parser");
 const FsGen = @import("FsGen.zig");
+const config = @import("config.zig");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -13,6 +14,7 @@ pub fn main() !void {
     var filename: ?[]const u8 = null;
     var namespace: ?[]const u8 = null;
     var varint_as_number = false;
+    var config_path: ?[]const u8 = null;
 
     var i: usize = 1;
     while (i < args.len) : (i += 1) {
@@ -30,6 +32,14 @@ pub fn main() !void {
             namespace = args[i];
         } else if (std.mem.eql(u8, arg, "--varint-as-number")) {
             varint_as_number = true;
+        } else if (std.mem.eql(u8, arg, "--config") or std.mem.eql(u8, arg, "-c")) {
+            i += 1;
+            if (i >= args.len) {
+                const stderr = std.fs.File.stderr().deprecatedWriter();
+                try stderr.writeAll("error: --config requires a value\n");
+                std.process.exit(1);
+            }
+            config_path = args[i];
         } else if (arg.len > 0 and arg[0] == '-') {
             const stderr = std.fs.File.stderr().deprecatedWriter();
             try stderr.print("unknown option: {s}\n", .{arg});
@@ -92,10 +102,33 @@ pub fn main() !void {
     const base_dir = std.fs.path.dirname(file_path) orelse ".";
     try resolveImports(allocator, &imports, &import_results, &import_sources, base_dir, schema.imports);
 
+    // Load config file if provided
+    var type_mappings = std.StringHashMap(config.TypeMapping).init(gen_arena.allocator());
+    if (config_path) |cp| {
+        // Allocate on arena so string slices in parsed config stay valid
+        const config_source = std.fs.cwd().readFileAlloc(gen_arena.allocator(), cp, 1 * 1024 * 1024) catch |err| {
+            const stderr = std.fs.File.stderr().deprecatedWriter();
+            try stderr.print("error: cannot read config '{s}': {s}\n", .{ cp, @errorName(err) });
+            std.process.exit(1);
+        };
+
+        const cfg = config.parse(gen_arena.allocator(), config_source) catch {
+            const stderr = std.fs.File.stderr().deprecatedWriter();
+            try stderr.print("error: invalid config file '{s}'\n", .{cp});
+            std.process.exit(1);
+        };
+        type_mappings = cfg.toRegistry(gen_arena.allocator()) catch {
+            const stderr = std.fs.File.stderr().deprecatedWriter();
+            try stderr.writeAll("error: failed to build type mapping registry\n");
+            std.process.exit(1);
+        };
+    }
+
     const stdout = std.fs.File.stdout().deprecatedWriter();
     var gen = FsGen.init(stdout.any(), schema, imports, gen_arena.allocator(), .{
         .varint_as_number = varint_as_number,
         .namespace = ns,
+        .type_mappings = type_mappings,
     });
     gen.generate() catch |err| {
         const stderr = std.fs.File.stderr().deprecatedWriter();
@@ -158,6 +191,7 @@ fn printUsage() !void {
         \\Options:
         \\  --namespace <name>   F# namespace for generated code (required)
         \\  --varint-as-number   Map uvarint/ivarint to int instead of uint64/int64
+        \\  --config, -c <file>  Path to cboragen.toml config with type mappings
         \\  --help, -h           Show this help
         \\
     );

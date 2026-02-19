@@ -2,6 +2,7 @@ const std = @import("std");
 const parser = @import("parser");
 const Ast = parser.Ast;
 const topo = @import("topo.zig");
+const config = @import("config.zig");
 
 const FsGen = @This();
 
@@ -14,6 +15,9 @@ loop_depth: u32,
 
 /// Namespace → Schema for imported schemas.
 imports: std.StringHashMap(Ast.Schema),
+
+/// Custom type mappings from config file.
+type_mappings: std.StringHashMap(config.TypeMapping),
 
 /// Inline types discovered during pass 1, keyed by pointer identity.
 inline_struct_names: std.AutoHashMap(*const Ast.StructDef, []const u8),
@@ -32,6 +36,7 @@ const InlineUnion = struct { name: []const u8, def: *const Ast.UnionDef };
 pub const Options = struct {
     varint_as_number: bool = false,
     namespace: []const u8,
+    type_mappings: std.StringHashMap(config.TypeMapping),
 };
 
 pub fn init(
@@ -49,6 +54,7 @@ pub fn init(
         .varint_as_number = options.varint_as_number,
         .loop_depth = 0,
         .imports = imports,
+        .type_mappings = options.type_mappings,
         .inline_struct_names = std.AutoHashMap(*const Ast.StructDef, []const u8).init(arena),
         .inline_enum_names = std.AutoHashMap(*const Ast.EnumDef, []const u8).init(arena),
         .inline_union_names = std.AutoHashMap(*const Ast.UnionDef, []const u8).init(arena),
@@ -126,11 +132,13 @@ pub fn generate(self: *FsGen) Error!void {
     for (groups) |group| {
         if (group.names.len == 1) {
             const name = group.names[0];
+            if (self.type_mappings.contains(name)) continue;
             const def = type_map.get(name) orelse continue;
             try self.emitTypeDef(name, def, null);
         } else {
             // Mutually recursive group — use `and`
             for (group.names, 0..) |name, i| {
+                if (self.type_mappings.contains(name)) continue;
                 const def = type_map.get(name) orelse continue;
                 if (i == 0) {
                     try self.emitTypeDef(name, def, null);
@@ -148,6 +156,7 @@ pub fn generate(self: *FsGen) Error!void {
             try self.emitRecursiveCodecGroup(group, &type_map);
         } else {
             for (group.names) |name| {
+                if (self.type_mappings.contains(name)) continue;
                 const def = type_map.get(name) orelse continue;
                 try self.emitCodecModule(name, def, null);
             }
@@ -386,10 +395,16 @@ fn emitTypeRef(self: *FsGen, ty: Ast.TypeExpr) Error!void {
             try self.writer.writeAll(" array");
         },
         .named => |n| {
-            try self.writer.writeAll(n.name);
+            if (self.type_mappings.get(n.name)) |mapping| {
+                try self.writer.writeAll(mapping.fsharp_type);
+            } else {
+                try self.writer.writeAll(n.name);
+            }
         },
         .qualified => |q| {
-            if (self.resolveQualified(q.namespace, q.name)) |_| {
+            if (self.type_mappings.get(q.name)) |mapping| {
+                try self.writer.writeAll(mapping.fsharp_type);
+            } else if (self.resolveQualified(q.namespace, q.name)) |_| {
                 try self.writer.writeAll(q.name);
             } else {
                 try self.writer.print("{s}.{s} (* unresolved import *)", .{ q.namespace, q.name });
@@ -635,10 +650,16 @@ fn emitEncodeExpr(self: *FsGen, ty: Ast.TypeExpr, access: []const u8, func_prefi
             }
         },
         .named => |n| {
-            try self.emitCodecCall(n.name, access, func_prefix, "encodeWith");
+            if (self.type_mappings.get(n.name)) |mapping| {
+                try self.writer.print("{s}.encodeWith w {s}", .{ mapping.codec_module, access });
+            } else {
+                try self.emitCodecCall(n.name, access, func_prefix, "encodeWith");
+            }
         },
         .qualified => |q| {
-            if (self.resolveQualified(q.namespace, q.name)) |_| {
+            if (self.type_mappings.get(q.name)) |mapping| {
+                try self.writer.print("{s}.encodeWith w {s}", .{ mapping.codec_module, access });
+            } else if (self.resolveQualified(q.namespace, q.name)) |_| {
                 try self.emitCodecCall(q.name, access, func_prefix, "encodeWith");
             }
         },
@@ -843,10 +864,16 @@ fn emitDecodeExpr(self: *FsGen, ty: Ast.TypeExpr, func_prefix: ?[]const u8) Erro
             }
         },
         .named => |n| {
-            try self.emitDecodeCall(n.name, func_prefix);
+            if (self.type_mappings.get(n.name)) |mapping| {
+                try self.writer.print("{s}.decodeWith r", .{mapping.codec_module});
+            } else {
+                try self.emitDecodeCall(n.name, func_prefix);
+            }
         },
         .qualified => |q| {
-            if (self.resolveQualified(q.namespace, q.name)) |_| {
+            if (self.type_mappings.get(q.name)) |mapping| {
+                try self.writer.print("{s}.decodeWith r", .{mapping.codec_module});
+            } else if (self.resolveQualified(q.namespace, q.name)) |_| {
                 try self.emitDecodeCall(q.name, func_prefix);
             }
         },
