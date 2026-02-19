@@ -1,0 +1,77 @@
+// Benchmark schema - realistic data structures
+
+/// A 3D point for micro-benchmarks
+Point3D = struct {
+    0 x: f64
+    1 y: f64
+    2 z: f64
+}
+
+/// A user profile with various field types
+User = struct {
+    0 id: u64
+    1 username: string
+    2 email: string
+    3 age: u8
+    4 active: bool
+    5 score: f64
+    6 tags: []string
+    7 metadata: ?UserMetadata
+}
+
+UserMetadata = struct {
+    0 createdAt: u64
+    1 lastLogin: u64
+    2 loginCount: u32
+    3 preferences: Preferences
+}
+
+Preferences = struct {
+    0 theme: Theme
+    1 notifications: bool
+    2 language: string
+}
+
+Theme = enum {
+    0 Light
+    1 Dark
+    2 System
+}
+
+/// A complex nested structure
+Message = struct {
+    0 id: u64
+    1 sender: User
+    2 recipients: []User
+    3 subject: string
+    4 body: string
+    5 attachments: []Attachment
+    6 priority: Priority
+    7 timestamp: u64
+}
+
+Attachment = struct {
+    0 name: string
+    1 mimeType: string
+    2 size: u32
+    3 data: bytes
+}
+
+Priority = enum {
+    0 Low
+    1 Normal
+    2 High
+    3 Urgent
+}
+
+/// Array of points for batch operations
+PointCloud = struct {
+    0 points: []Point3D
+    1 name: string
+}
+
+/// Float array for numeric benchmarks
+Numbers = struct {
+    0 values: []f64
+    1 label: string
+}

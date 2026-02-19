@@ -1,0 +1,17 @@
+{
+  "name": "cboragen-benchmark",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "generate": "cd ../codegen && zig build run -- ../benchmark/schema.cbg > ../benchmark/src/schema.gen.ts",
+    "build": "bun build src/main.ts --outdir dist --target browser --minify && cp index.html dist/index.html",
+    "dev": "bun run generate && bun run build",
+    "serve": "bun run dev && bun serve.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}
