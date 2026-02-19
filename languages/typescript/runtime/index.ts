@@ -18,7 +18,7 @@ function _grow(n: number): void {
   _v = new DataView(_b.buffer);
 }
 
-function _wb(byte: number): void { _grow(1); _b[_p++] = byte; }
+export function _wb(byte: number): void { _grow(1); _b[_p++] = byte; }
 function _w16(val: number): void { _grow(2); _v.setUint16(_p, val); _p += 2; }
 function _w32(val: number): void { _grow(4); _v.setUint32(_p, val); _p += 4; }
 function _w64(val: bigint): void { _grow(8); _v.setBigUint64(_p, val); _p += 8; }
@@ -32,42 +32,42 @@ function _eMajLen(base: number, n: number | bigint): void {
   else { _wb(base | 27); _w64(v); }
 }
 
-function _eBool(v: boolean): void { _wb(v ? 0xf5 : 0xf4); }
-function _eNull(): void { _wb(0xf6); }
+export function _eBool(v: boolean): void { _wb(v ? 0xf5 : 0xf4); }
+export function _eNull(): void { _wb(0xf6); }
 
-function _eU8(v: number): void { _wb(0x18); _wb(v); }
-function _eU16(v: number): void { _wb(0x19); _w16(v); }
-function _eU32(v: number): void { _wb(0x1a); _w32(v); }
-function _eU64(v: bigint): void { _wb(0x1b); _w64(v); }
+export function _eU8(v: number): void { _wb(0x18); _wb(v); }
+export function _eU16(v: number): void { _wb(0x19); _w16(v); }
+export function _eU32(v: number): void { _wb(0x1a); _w32(v); }
+export function _eU64(v: bigint): void { _wb(0x1b); _w64(v); }
 
-function _eI8(v: number): void {
+export function _eI8(v: number): void {
   if (v >= 0) { _wb(0x18); _wb(v); }
   else { _wb(0x38); _wb(-1 - v); }
 }
-function _eI16(v: number): void {
+export function _eI16(v: number): void {
   if (v >= 0) { _wb(0x19); _w16(v); }
   else { _wb(0x39); _w16(-1 - v); }
 }
-function _eI32(v: number): void {
+export function _eI32(v: number): void {
   if (v >= 0) { _wb(0x1a); _w32(v); }
   else { _wb(0x3a); _w32(-1 - v); }
 }
-function _eI64(v: bigint): void {
+export function _eI64(v: bigint): void {
   if (v >= 0n) { _wb(0x1b); _w64(v); }
   else { _wb(0x3b); _w64(-1n - v); }
 }
 
-function _eUvar(v: bigint): void { _eMajLen(0x00, v); }
-function _eIvar(v: bigint): void {
+export function _eUvar(v: bigint): void { _eMajLen(0x00, v); }
+export function _eIvar(v: bigint): void {
   if (v >= 0n) { _eMajLen(0x00, v); }
   else { _eMajLen(0x20, -1n - v); }
 }
 
-function _eF16(v: number): void { _wb(0xf9); _grow(2); _v.setFloat16(_p, v); _p += 2; }
-function _eF32(v: number): void { _wb(0xfa); _grow(4); _v.setFloat32(_p, v); _p += 4; }
-function _eF64(v: number): void { _wb(0xfb); _grow(8); _v.setFloat64(_p, v); _p += 8; }
+export function _eF16(v: number): void { _wb(0xf9); _grow(2); _v.setFloat16(_p, v); _p += 2; }
+export function _eF32(v: number): void { _wb(0xfa); _grow(4); _v.setFloat32(_p, v); _p += 4; }
+export function _eF64(v: number): void { _wb(0xfb); _grow(8); _v.setFloat64(_p, v); _p += 8; }
 
-function _eStr(v: string): void {
+export function _eStr(v: string): void {
   const enc = _te.encode(v);
   _eMajLen(0x60, enc.length);
   _grow(enc.length);
@@ -75,64 +75,64 @@ function _eStr(v: string): void {
   _p += enc.length;
 }
 
-function _eBytes(v: Uint8Array): void {
+export function _eBytes(v: Uint8Array): void {
   _eMajLen(0x40, v.length);
   _grow(v.length);
   _b.set(v, _p);
   _p += v.length;
 }
 
-function _eArrHdr(len: number): void { _eMajLen(0x80, len); }
-function _eTagHdr(tag: number): void { _eMajLen(0xc0, tag); }
+export function _eArrHdr(len: number): void { _eMajLen(0x80, len); }
+export function _eTagHdr(tag: number): void { _eMajLen(0xc0, tag); }
 
-function _reset(): void { _p = 0; }
-function _finish(): Uint8Array { const r = _b.slice(0, _p); _p = 0; return r; }
+export function _reset(): void { _p = 0; }
+export function _finish(): Uint8Array { const r = _b.slice(0, _p); _p = 0; return r; }
 
 // --- Decoder state ---
 let _db: Uint8Array;
 let _dv: DataView;
 let _dp: number;
 
-function _dInit(data: Uint8Array): void {
+export function _dInit(data: Uint8Array): void {
   _db = data; _dv = new DataView(data.buffer, data.byteOffset, data.byteLength); _dp = 0;
 }
 
-function _rb(): number { return _db[_dp++]; }
-function _r16(): number { const v = _dv.getUint16(_dp); _dp += 2; return v; }
-function _r32(): number { const v = _dv.getUint32(_dp); _dp += 4; return v; }
+export function _rb(): number { return _db[_dp++]; }
+export function _r16(): number { const v = _dv.getUint16(_dp); _dp += 2; return v; }
+export function _r32(): number { const v = _dv.getUint32(_dp); _dp += 4; return v; }
 function _r64(): bigint { const v = _dv.getBigUint64(_dp); _dp += 8; return v; }
 
-function _dBool(): boolean {
+export function _dBool(): boolean {
   const b = _rb();
   if (b === 0xf5) return true;
   if (b === 0xf4) return false;
   throw new Error("expected bool");
 }
 
-function _dU8(): number { if (_rb() !== 0x18) throw new Error("expected u8"); return _rb(); }
-function _dU16(): number { if (_rb() !== 0x19) throw new Error("expected u16"); return _r16(); }
-function _dU32(): number { if (_rb() !== 0x1a) throw new Error("expected u32"); return _r32(); }
-function _dU64(): bigint { if (_rb() !== 0x1b) throw new Error("expected u64"); return _r64(); }
+export function _dU8(): number { if (_rb() !== 0x18) throw new Error("expected u8"); return _rb(); }
+export function _dU16(): number { if (_rb() !== 0x19) throw new Error("expected u16"); return _r16(); }
+export function _dU32(): number { if (_rb() !== 0x1a) throw new Error("expected u32"); return _r32(); }
+export function _dU64(): bigint { if (_rb() !== 0x1b) throw new Error("expected u64"); return _r64(); }
 
-function _dI8(): number {
+export function _dI8(): number {
   const b = _rb();
   if (b === 0x18) return _rb();
   if (b === 0x38) return -1 - _rb();
   throw new Error("expected i8");
 }
-function _dI16(): number {
+export function _dI16(): number {
   const b = _rb();
   if (b === 0x19) return _r16();
   if (b === 0x39) return -1 - _r16();
   throw new Error("expected i16");
 }
-function _dI32(): number {
+export function _dI32(): number {
   const b = _rb();
   if (b === 0x1a) return _r32();
   if (b === 0x3a) return -1 - _r32();
   throw new Error("expected i32");
 }
-function _dI64(): bigint {
+export function _dI64(): bigint {
   const b = _rb();
   if (b === 0x1b) return _r64();
   if (b === 0x3b) return -1n - _r64();
@@ -152,7 +152,7 @@ function _dMajLen(expectedMajor: number): number {
   throw new Error("unsupported additional info " + ai);
 }
 
-function _dUvar(): bigint {
+export function _dUvar(): bigint {
   const b = _rb();
   const ai = b & 0x1f;
   if (ai <= 23) return BigInt(ai);
@@ -163,7 +163,7 @@ function _dUvar(): bigint {
   throw new Error("expected uvarint");
 }
 
-function _dIvar(): bigint {
+export function _dIvar(): bigint {
   const b = _rb();
   const maj = b >> 5;
   const ai = b & 0x1f;
@@ -179,27 +179,30 @@ function _dIvar(): bigint {
   throw new Error("expected ivarint");
 }
 
-function _dF16(): number { if (_rb() !== 0xf9) throw new Error("expected f16"); const v = _dv.getFloat16(_dp); _dp += 2; return v; }
-function _dF32(): number { if (_rb() !== 0xfa) throw new Error("expected f32"); const v = _dv.getFloat32(_dp); _dp += 4; return v; }
-function _dF64(): number { if (_rb() !== 0xfb) throw new Error("expected f64"); const v = _dv.getFloat64(_dp); _dp += 8; return v; }
+export function _dF16(): number { if (_rb() !== 0xf9) throw new Error("expected f16"); const v = _dv.getFloat16(_dp); _dp += 2; return v; }
+export function _dF32(): number { if (_rb() !== 0xfa) throw new Error("expected f32"); const v = _dv.getFloat32(_dp); _dp += 4; return v; }
+export function _dF64(): number { if (_rb() !== 0xfb) throw new Error("expected f64"); const v = _dv.getFloat64(_dp); _dp += 8; return v; }
 
-function _dStr(): string {
+export function _dStr(): string {
   const len = _dMajLen(3);
   const s = _td.decode(_db.subarray(_dp, _dp + len));
   _dp += len;
   return s;
 }
 
-function _dBytes(): Uint8Array {
+export function _dBytes(): Uint8Array {
   const len = _dMajLen(2);
   const b = _db.slice(_dp, _dp + len);
   _dp += len;
   return b;
 }
 
-function _dArrHdr(): number { return _dMajLen(4); }
+export function _dArrHdr(): number { return _dMajLen(4); }
 
-function _dSkip(): void {
+export function _dPeek(): number { return _db[_dp]; }
+export function _dAdv(): void { _dp++; }
+
+export function _dSkip(): void {
   const b = _rb();
   const maj = b >> 5;
   const ai = b & 0x1f;
