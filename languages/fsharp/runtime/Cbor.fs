@@ -1,6 +1,8 @@
-module internal Cbor =
+namespace Cboragen
 
-    open System
+open System
+
+module Cbor =
 
     // === Writer ===
 
