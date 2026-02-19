@@ -1,0 +1,36 @@
+{
+  "name": "cboragen",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "cboragen": "./dist/cli.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./bun": {
+      "types": "./dist/plugins/bun.d.ts",
+      "import": "./dist/plugins/bun.js"
+    },
+    "./vite": {
+      "types": "./dist/plugins/vite.d.ts",
+      "import": "./dist/plugins/vite.js"
+    }
+  },
+  "optionalDependencies": {
+    "@cboragen/darwin-arm64": "0.1.0",
+    "@cboragen/darwin-x64": "0.1.0",
+    "@cboragen/linux-x64": "0.1.0"
+  },
+  "scripts": {
+    "build": "tsc"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.0",
+    "typescript": "^5"
+  }
+}
