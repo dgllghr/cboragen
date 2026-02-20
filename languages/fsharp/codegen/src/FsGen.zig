@@ -13,6 +13,9 @@ namespace: []const u8,
 varint_as_number: bool,
 loop_depth: u32,
 
+/// Names of types in the current recursive codec group (null when not in one).
+rec_group: ?[]const []const u8,
+
 /// Namespace → Schema for imported schemas.
 imports: std.StringHashMap(Ast.Schema),
 
@@ -53,6 +56,7 @@ pub fn init(
         .namespace = options.namespace,
         .varint_as_number = options.varint_as_number,
         .loop_depth = 0,
+        .rec_group = null,
         .imports = imports,
         .type_mappings = options.type_mappings,
         .inline_struct_names = std.AutoHashMap(*const Ast.StructDef, []const u8).init(arena),
@@ -321,17 +325,19 @@ fn emitEnumType(self: *FsGen, name: []const u8, def: *const Ast.EnumDef, keyword
 
 fn emitUnionType(self: *FsGen, name: []const u8, def: *const Ast.UnionDef, keyword_override: ?[]const u8) Error!void {
     if (keyword_override) |kw| {
-        try self.writer.print("{s} [<Struct>] {s} =\n", .{ kw, name });
+        try self.writer.print("{s} [<Struct; RequireQualifiedAccess>] {s} =\n", .{ kw, name });
     } else {
-        try self.writer.print("[<Struct>]\ntype {s} =\n", .{name});
+        try self.writer.print("[<Struct; RequireQualifiedAccess>]\ntype {s} =\n", .{name});
     }
     for (def.variants) |v| {
+        const vname = try self.toPascalCase(v.name);
         if (v.payload) |payload| {
-            try self.writer.print("    | {s} of ", .{v.name});
+            const field_name = try self.toLowerCamelCase(v.name);
+            try self.writer.print("    | {s} of {s}Value: ", .{ vname, field_name });
             try self.emitTypeRef(payload);
             try self.writer.writeAll("\n");
         } else {
-            try self.writer.print("    | {s}\n", .{v.name});
+            try self.writer.print("    | {s}\n", .{vname});
         }
     }
     try self.writer.writeAll("\n");
@@ -448,13 +454,13 @@ fn emitCodecModule(self: *FsGen, name: []const u8, def: Ast.TypeDef, func_prefix
     // encode (standalone)
     try self.writer.print("\n    let encode (value: {s}) : byte array =\n", .{name});
     try self.writer.writeAll("        let w = Cbor.Writer()\n");
-    try self.writer.print("        {s}Codec.encodeWith w value\n", .{name});
+    try self.writer.writeAll("        encodeWith w value\n");
     try self.writer.writeAll("        w.Finish()\n");
 
     // decode (standalone)
     try self.writer.print("\n    let decode (data: byte array) : {s} =\n", .{name});
     try self.writer.writeAll("        let r = Cbor.Reader(data)\n");
-    try self.writer.print("        {s}Codec.decodeWith r\n", .{name});
+    try self.writer.writeAll("        decodeWith r\n");
 }
 
 fn emitRecursiveCodecGroup(self: *FsGen, group: topo.TypeGroup, type_map: *std.StringHashMap(Ast.TypeDef)) Error!void {
@@ -469,6 +475,9 @@ fn emitRecursiveCodecGroup(self: *FsGen, group: topo.TypeGroup, type_map: *std.S
 
     // Internal module with `let rec ... and ...`
     try self.writer.print("\nmodule internal {s} =\n", .{internal_name});
+
+    self.rec_group = group.names;
+    defer self.rec_group = null;
 
     for (group.names, 0..) |name, i| {
         const def = type_map.get(name) orelse continue;
@@ -516,7 +525,7 @@ fn emitEncodeBody(self: *FsGen, name: []const u8, def: Ast.TypeDef, func_prefix:
         .union_ => |u| try self.emitUnionEncodeBody(name, u, func_prefix, indent),
         else => {
             try self.writer.print("{s}", .{indent});
-            try self.emitEncodeExpr(def.ty, "value", func_prefix);
+            try self.emitEncodeExpr(def.ty, "value", func_prefix, indent);
             try self.writer.writeAll("\n");
         },
     }
@@ -534,7 +543,7 @@ fn emitStructEncodeBody(self: *FsGen, def: *const Ast.StructDef, func_prefix: ?[
                 const fname = try self.toPascalCase(field.name);
                 const access = try std.fmt.allocPrint(self.arena, "value.{s}", .{fname});
                 try self.writer.print("{s}", .{indent});
-                try self.emitEncodeExpr(field.ty, access, func_prefix);
+                try self.emitEncodeExpr(field.ty, access, func_prefix, indent);
                 try self.writer.writeAll("\n");
             } else {
                 try self.writer.print("{s}w.WriteNull()\n", .{indent});
@@ -550,19 +559,21 @@ fn emitEnumEncodeBody(self: *FsGen, indent: []const u8) Error!void {
 fn emitUnionEncodeBody(self: *FsGen, name: []const u8, def: *const Ast.UnionDef, func_prefix: ?[]const u8, indent: []const u8) Error!void {
     try self.writer.print("{s}match value with\n", .{indent});
     for (def.variants) |v| {
+        const vname = try self.toPascalCase(v.name);
         if (v.payload) |payload| {
-            try self.writer.print("{s}| {s}.{s} v ->\n", .{ indent, name, v.name });
-            try self.writer.print("{s}    w.WriteTagHeader({d}u)\n", .{ indent, v.tag });
-            try self.writer.print("{s}    ", .{indent});
-            try self.emitEncodeExpr(payload, "v", func_prefix);
+            const variant_indent = try std.fmt.allocPrint(self.arena, "{s}    ", .{indent});
+            try self.writer.print("{s}| {s}.{s} v ->\n", .{ indent, name, vname });
+            try self.writer.print("{s}w.WriteTagHeader({d}u)\n", .{ variant_indent, v.tag });
+            try self.writer.print("{s}", .{variant_indent});
+            try self.emitEncodeExpr(payload, "v", func_prefix, variant_indent);
             try self.writer.writeAll("\n");
         } else {
-            try self.writer.print("{s}| {s}.{s} -> w.WriteUvarint({d}UL)\n", .{ indent, name, v.name, v.tag });
+            try self.writer.print("{s}| {s}.{s} -> w.WriteUvarint({d}UL)\n", .{ indent, name, vname, v.tag });
         }
     }
 }
 
-fn emitEncodeExpr(self: *FsGen, ty: Ast.TypeExpr, access: []const u8, func_prefix: ?[]const u8) Error!void {
+fn emitEncodeExpr(self: *FsGen, ty: Ast.TypeExpr, access: []const u8, func_prefix: ?[]const u8, indent: []const u8) Error!void {
     switch (ty) {
         .bool => try self.writer.print("w.WriteBool({s})", .{access}),
         .string => try self.writer.print("w.WriteString({s})", .{access}),
@@ -603,12 +614,13 @@ fn emitEncodeExpr(self: *FsGen, ty: Ast.TypeExpr, access: []const u8, func_prefi
             try self.writer.print("w.{s}({s})", .{ fn_name, access });
         },
         .option => |o| {
+            const deeper = try std.fmt.allocPrint(self.arena, "{s}    ", .{indent});
             try self.writer.print("match {s} with\n", .{access});
-            try self.writer.writeAll("        | ValueNone -> w.WriteByte(0x00uy)\n");
-            try self.writer.writeAll("        | ValueSome v ->\n");
-            try self.writer.writeAll("            w.WriteTagHeader(1u)\n");
-            try self.writer.writeAll("            ");
-            try self.emitEncodeExpr(o.child, "v", func_prefix);
+            try self.writer.print("{s}| ValueNone -> w.WriteByte(0x00uy)\n", .{indent});
+            try self.writer.print("{s}| ValueSome v ->\n", .{indent});
+            try self.writer.print("{s}w.WriteTagHeader(1u)\n", .{deeper});
+            try self.writer.print("{s}", .{deeper});
+            try self.emitEncodeExpr(o.child, "v", func_prefix, deeper);
         },
         .array => |a| {
             if (isU8Array(a.getElement())) {
@@ -617,25 +629,26 @@ fn emitEncodeExpr(self: *FsGen, ty: Ast.TypeExpr, access: []const u8, func_prefi
                 const lv = try std.fmt.allocPrint(self.arena, "_i{d}", .{self.loop_depth});
                 self.loop_depth += 1;
                 defer self.loop_depth -= 1;
+                const deeper = try std.fmt.allocPrint(self.arena, "{s}    ", .{indent});
                 switch (a.*) {
                     .variable => |v| {
                         try self.writer.print("w.WriteArrayHeader(({s}).Length)\n", .{access});
-                        try self.writer.print("        for {s} = 0 to ({s}).Length - 1 do\n            ", .{ lv, access });
+                        try self.writer.print("{s}for {s} = 0 to ({s}).Length - 1 do\n{s}", .{ indent, lv, access, deeper });
                         const elem_access = try std.fmt.allocPrint(self.arena, "({s}).[{s}]", .{ access, lv });
-                        try self.emitEncodeExpr(v.element, elem_access, func_prefix);
+                        try self.emitEncodeExpr(v.element, elem_access, func_prefix, deeper);
                     },
                     .fixed => |f| {
                         try self.writer.print("w.WriteArrayHeader({d})\n", .{f.len});
-                        try self.writer.print("        for {s} = 0 to {d} - 1 do\n            ", .{ lv, f.len });
+                        try self.writer.print("{s}for {s} = 0 to {d} - 1 do\n{s}", .{ indent, lv, f.len, deeper });
                         const elem_access = try std.fmt.allocPrint(self.arena, "({s}).[{s}]", .{ access, lv });
-                        try self.emitEncodeExpr(f.element, elem_access, func_prefix);
+                        try self.emitEncodeExpr(f.element, elem_access, func_prefix, deeper);
                     },
                     .external_len => |e| {
                         try self.writer.writeAll("w.WriteByte(0x9Fuy)\n");
-                        try self.writer.print("        for {s} = 0 to ({s}).Length - 1 do\n            ", .{ lv, access });
+                        try self.writer.print("{s}for {s} = 0 to ({s}).Length - 1 do\n{s}", .{ indent, lv, access, deeper });
                         const elem_access = try std.fmt.allocPrint(self.arena, "({s}).[{s}]", .{ access, lv });
-                        try self.emitEncodeExpr(e.element, elem_access, func_prefix);
-                        try self.writer.writeAll("\n        w.WriteByte(0xFFuy)");
+                        try self.emitEncodeExpr(e.element, elem_access, func_prefix, deeper);
+                        try self.writer.print("\n{s}w.WriteByte(0xFFuy)", .{indent});
                     },
                 }
             }
@@ -672,11 +685,11 @@ fn emitEncodeExpr(self: *FsGen, ty: Ast.TypeExpr, access: []const u8, func_prefi
     }
 }
 
-/// Emit a codec function call. If func_prefix matches the target name, use the
-/// recursive form (e.g., `encodeWithFoo`), otherwise use `FooCodec.encodeWith`.
+/// Emit a codec function call. If the target is in the current recursive group,
+/// use the bare form (e.g., `encodeWithFoo`), otherwise use `FooCodec.encodeWith`.
 fn emitCodecCall(self: *FsGen, target_name: []const u8, access: []const u8, func_prefix: ?[]const u8, func_name: []const u8) Error!void {
-    if (func_prefix) |_| {
-        // In a recursive group, use the internal function name
+    _ = func_prefix;
+    if (self.isInRecGroup(target_name)) {
         try self.writer.print("{s}{s} w {s}", .{ func_name, target_name, access });
     } else {
         try self.writer.print("{s}Codec.{s} w {s}", .{ target_name, func_name, access });
@@ -765,7 +778,8 @@ fn emitUnionDecodeBody(self: *FsGen, name: []const u8, def: *const Ast.UnionDef,
     // Variants with payloads (tag major type 6)
     for (def.variants) |v| {
         if (v.payload) |payload| {
-            try self.writer.print("{s}    | {d}u -> {s}.{s}(", .{ indent, v.tag, name, v.name });
+            const vname = try self.toPascalCase(v.name);
+            try self.writer.print("{s}    | {d}u -> {s}.{s}(", .{ indent, v.tag, name, vname });
             try self.emitDecodeExpr(payload, func_prefix);
             try self.writer.writeAll(")\n");
         }
@@ -779,7 +793,8 @@ fn emitUnionDecodeBody(self: *FsGen, name: []const u8, def: *const Ast.UnionDef,
     // Variants without payloads (tag major type 0 — unsigned int)
     for (def.variants) |v| {
         if (v.payload == null) {
-            try self.writer.print("{s}    | {d} -> {s}.{s}\n", .{ indent, v.tag, name, v.name });
+            const vname = try self.toPascalCase(v.name);
+            try self.writer.print("{s}    | {d} -> {s}.{s}\n", .{ indent, v.tag, name, vname });
         }
     }
     try self.writer.print("{s}    | _ -> failwithf \"unknown union tag %%d\" tag\n", .{indent});
@@ -890,7 +905,8 @@ fn emitDecodeExpr(self: *FsGen, ty: Ast.TypeExpr, func_prefix: ?[]const u8) Erro
 }
 
 fn emitDecodeCall(self: *FsGen, target_name: []const u8, func_prefix: ?[]const u8) Error!void {
-    if (func_prefix) |_| {
+    _ = func_prefix;
+    if (self.isInRecGroup(target_name)) {
         try self.writer.print("decodeWith{s} r", .{target_name});
     } else {
         try self.writer.print("{s}Codec.decodeWith r", .{target_name});
@@ -935,9 +951,26 @@ fn toPascalCase(self: *FsGen, name: []const u8) Error![]const u8 {
     return try std.fmt.allocPrint(self.arena, "{c}{s}", .{ upper, name[1..] });
 }
 
+/// Convert a PascalCase name to camelCase.
+fn toLowerCamelCase(self: *FsGen, name: []const u8) Error![]const u8 {
+    if (name.len == 0) return name;
+    if (std.ascii.isLower(name[0])) return name;
+    const lower = std.ascii.toLower(name[0]);
+    return try std.fmt.allocPrint(self.arena, "{c}{s}", .{ lower, name[1..] });
+}
+
 /// Check if a type expression is `u8` (for byte array special-casing).
 fn isU8Array(element: Ast.TypeExpr) bool {
     return element == .int and element.int.kind == .u8;
+}
+
+/// Check if a type name is in the current recursive codec group.
+fn isInRecGroup(self: *FsGen, name: []const u8) bool {
+    const group = self.rec_group orelse return false;
+    for (group) |member| {
+        if (std.mem.eql(u8, member, name)) return true;
+    }
+    return false;
 }
 
 /// Look up a qualified type reference in imported schemas.

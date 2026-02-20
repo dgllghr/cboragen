@@ -186,7 +186,7 @@ fn printUsage() !void {
         \\Usage: cboragen-fs [options] <schema.cbg>
         \\
         \\Generate F# types, encoders, and decoders from a
-        \\Proteus schema file. Output is written to stdout.
+        \\cboragen schema file. Output is written to stdout.
         \\
         \\Options:
         \\  --namespace <name>   F# namespace for generated code (required)

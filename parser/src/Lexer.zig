@@ -1,4 +1,4 @@
-//! On-demand lexer (tokenizer) for the Proteus schema language.
+//! On-demand lexer (tokenizer) for the cboragen schema language.
 //!
 //! The lexer is an iterator: call `next()` to get the next token.
 //! It handles whitespace skipping, newline collapsing, comments,

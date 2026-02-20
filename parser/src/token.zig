@@ -1,4 +1,4 @@
-//! Token types for the Proteus schema lexer.
+//! Token types for the cboragen schema lexer.
 
 const std = @import("std");
 const Span = @import("source_location.zig").Span;

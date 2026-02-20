@@ -1,4 +1,4 @@
-//! Recursive descent parser for the Proteus schema language.
+//! Recursive descent parser for the cboragen schema language.
 //!
 //! Produces a pointer-based, arena-allocated AST. Uses panic-mode
 //! error recovery to accumulate multiple diagnostics per parse.
@@ -306,7 +306,7 @@ fn parseTypeExpr(self: *Parser) Error!Ast.TypeExpr {
                     .span = ns_span.merge(end_span),
                 } };
             }
-            // Plain identifier used as type — this is an error in Proteus
+            // Plain identifier used as type — this is an error in cboragen
             // (types must start uppercase), but we'll treat it as a named type
             // reference and let semantic analysis catch it.
             break :ret .{ .named = .{ .name = ns, .span = ns_span } };
@@ -519,7 +519,7 @@ fn parseField(self: *Parser) Error!Ast.FieldDef {
     self.advance_();
 
     // Field name can be identifier, type_identifier, or integer_literal
-    // (numeric field names like `0 0: u64` are valid in Proteus).
+    // (numeric field names like `0 0: u64` are valid in cboragen).
     if (self.current.tag != .identifier and self.current.tag != .type_identifier and self.current.tag != .integer_literal) {
         self.emitError("expected field name");
         return error.ParseError;

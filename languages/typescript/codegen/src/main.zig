@@ -134,7 +134,7 @@ fn printUsage() !void {
         \\Usage: cboragen-ts [options] <schema.cbg>
         \\
         \\Generate TypeScript types, encoders, and decoders from a
-        \\Proteus schema file. Output is written to stdout.
+        \\cboragen schema file. Output is written to stdout.
         \\
         \\Options:
         \\  --varint-as-number   Map uvarint/ivarint to number instead of bigint

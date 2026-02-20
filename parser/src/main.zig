@@ -1,4 +1,4 @@
-//! CLI tool for parsing Proteus schema files.
+//! CLI tool for parsing cboragen schema files.
 //!
 //! Usage:
 //!   cboragen-parse <file>              Parse and dump AST summary

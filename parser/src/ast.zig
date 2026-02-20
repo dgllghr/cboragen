@@ -1,4 +1,4 @@
-//! Abstract Syntax Tree types for the Proteus schema language.
+//! Abstract Syntax Tree types for the cboragen schema language.
 //!
 //! The AST is pointer-based and arena-allocated. String data
 //! is generally slices into the original source buffer (zero-copy),

@@ -132,11 +132,11 @@ test "Renderer - renders basic error" {
         .notes = &.{},
     };
 
-    try render(buf.writer(std.testing.allocator).any(), source, "test.proteus", &.{diag}, false);
+    try render(buf.writer(std.testing.allocator).any(), source, "test.cbg", &.{diag}, false);
 
     const output = buf.items;
     try std.testing.expect(std.mem.indexOf(u8, output, "error: expected type expression") != null);
-    try std.testing.expect(std.mem.indexOf(u8, output, "test.proteus:1:9") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "test.cbg:1:9") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "^^^^^") != null);
 }
 
@@ -155,7 +155,7 @@ test "Renderer - renders with note" {
         .notes = &notes,
     };
 
-    try render(buf.writer(std.testing.allocator).any(), source, "test.proteus", &.{diag}, false);
+    try render(buf.writer(std.testing.allocator).any(), source, "test.cbg", &.{diag}, false);
 
     const output = buf.items;
     try std.testing.expect(std.mem.indexOf(u8, output, "help: field syntax") != null);
