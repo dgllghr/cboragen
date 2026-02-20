@@ -269,11 +269,11 @@ test "Lexer - basic symbols" {
 test "Lexer - keywords" {
     var diags = DiagnosticList.init(std.testing.allocator);
     defer diags.deinit();
-    var lexer = Lexer.init("struct enum union bool string bytes u8 u64 i32 f64 uvarint ivarint", &diags);
+    var lexer = Lexer.init("struct enum union bool string u8 u64 i32 f64 uvarint ivarint", &diags);
 
     const expected = [_]Tag{
         .kw_struct, .kw_enum, .kw_union,
-        .kw_bool, .kw_string, .kw_bytes,
+        .kw_bool, .kw_string,
         .kw_u8, .kw_u64, .kw_i32, .kw_f64,
         .kw_uvarint, .kw_ivarint, .eof,
     };

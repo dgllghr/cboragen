@@ -54,7 +54,7 @@ Attachment = struct {
     0 name: string
     1 mimeType: string
     2 size: u32
-    3 data: bytes
+    3 data: []u8
 }
 
 Priority = enum {

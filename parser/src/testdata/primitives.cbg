@@ -2,7 +2,7 @@
 
 BoolAlias = bool
 StringAlias = string
-BytesAlias = bytes
+BytesAlias = []u8
 
 U8Alias = u8
 U16Alias = u16

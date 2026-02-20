@@ -61,7 +61,6 @@ All multi-byte integers are big-endian.
 | `f32`       | Major 7, AI 26, 4 bytes     | `0xfa`           | 5         |
 | `f64`       | Major 7, AI 27, 8 bytes     | `0xfb`           | 9         |
 | `string`    | Major 3, length-prefixed UTF-8 | `0x60`–`0x7b` | 1–9 + len |
-| `bytes`     | Major 2, length-prefixed    | `0x40`–`0x5b`   | 1–9 + len |
 
 **Key rules:**
 
@@ -146,14 +145,23 @@ Nested optionals (`??T`) nest naturally:
 
 ### Arrays
 
+**Byte Arrays:** `[]u8`, `[N]u8`, and `[.field]u8` encode as CBOR byte strings
+(major type 2) rather than CBOR arrays. This gives 1 byte per element instead of 2.
+
+```
+[]u8 with values [10, 20]:
+42          -- bytes(2)
+  0a 14     -- raw bytes
+```
+
 **Variable-length `[]T`:** Definite-length CBOR array (major type 4). Length prefix
 followed by N encoded elements.
 
 ```
-[]u8 with values [10, 20]:
+[]u32 with values [10, 20]:
 82          -- array(2)
-  18 0a     -- u8(10)
-  18 14     -- u8(20)
+  1a 0000000a -- u32(10)
+  1a 00000014 -- u32(20)
 ```
 
 **Fixed-length `[N]T`:** Definite-length CBOR array (major type 4) with length N. The
@@ -198,7 +206,7 @@ equality check per field.
 | `[3]T`        | `assert(byte == 0x83)`, decode 3 elements               |
 | `?T`          | `byte == 0x00` → none; `byte == 0xc1` → decode T       |
 | `string`      | Check major type 3, switch on AI to decode length       |
-| `bytes`       | Check major type 2, switch on AI to decode length       |
+| `[]u8`        | Check major type 2, switch on AI to decode length       |
 | `[]T`         | Check major type 4, switch on AI to decode length       |
 | `[.field]T`   | `assert(byte == 0x9f)`, decode N elements, `assert(byte == 0xff)` |
 | Union         | Switch on tag number or integer value per schema        |

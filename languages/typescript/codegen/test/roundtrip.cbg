@@ -17,7 +17,7 @@ Primitives = struct {
     11 uvar: uvarint
     12 ivar: ivarint
     13 str: string
-    14 bin: bytes
+    14 bin: []u8
 }
 
 /// Struct with optional fields

@@ -22,7 +22,6 @@ pub const Tag = enum(u8) {
     // Keywords - types
     kw_bool,
     kw_string,
-    kw_bytes,
     kw_u8,
     kw_u16,
     kw_u32,
@@ -75,7 +74,6 @@ pub const Tag = enum(u8) {
             .type_identifier => "type name",
             .kw_bool => "'bool'",
             .kw_string => "'string'",
-            .kw_bytes => "'bytes'",
             .kw_u8 => "'u8'",
             .kw_u16 => "'u16'",
             .kw_u32 => "'u32'",
@@ -116,7 +114,6 @@ pub const Tag = enum(u8) {
         return switch (self) {
             .kw_bool,
             .kw_string,
-            .kw_bytes,
             .kw_u8,
             .kw_u16,
             .kw_u32,
@@ -144,7 +141,6 @@ pub fn getKeyword(text: []const u8) ?Tag {
 const KEYWORDS = std.StaticStringMap(Tag).initComptime(.{
     .{ "bool", .kw_bool },
     .{ "string", .kw_string },
-    .{ "bytes", .kw_bytes },
     .{ "u8", .kw_u8 },
     .{ "u16", .kw_u16 },
     .{ "u32", .kw_u32 },

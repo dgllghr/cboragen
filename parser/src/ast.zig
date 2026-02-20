@@ -33,7 +33,6 @@ pub const TypeDef = struct {
 pub const TypeExpr = union(enum) {
     bool: Span,
     string: Span,
-    bytes: Span,
     int: IntType,
     float: FloatType,
     struct_: *const StructDef,
@@ -52,7 +51,7 @@ pub const TypeExpr = union(enum) {
     /// Get the span of this type expression.
     pub fn getSpan(self: TypeExpr) Span {
         return switch (self) {
-            .bool, .string, .bytes => |s| s,
+            .bool, .string => |s| s,
             .int => |i| i.span,
             .float => |f| f.span,
             .struct_ => |s| s.span,

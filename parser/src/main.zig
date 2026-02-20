@@ -141,7 +141,6 @@ fn dumpTypeExpr(writer: anytype, ty: parser.Ast.TypeExpr, indent: usize) !void {
     switch (ty) {
         .bool => try writer.writeAll("bool"),
         .string => try writer.writeAll("string"),
-        .bytes => try writer.writeAll("bytes"),
         .int => |i| try writer.print("{s}", .{@tagName(i.kind)}),
         .float => |f| try writer.print("{s}", .{@tagName(f.kind)}),
         .named => |n| try writer.print("{s}", .{n.name}),

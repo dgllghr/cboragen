@@ -7,7 +7,7 @@ Result = union {
 /// A message that can carry different payloads
 Message = union {
     0 text: string
-    1 binary: bytes
+    1 binary: []u8
     2 ping
 }
 

@@ -41,9 +41,8 @@ Response = union {
 | Varints | `uvarint` `ivarint` (minimal CBOR encoding) |
 | Floats | `f16` `f32` `f64` |
 | Text | `string` (UTF-8) |
-| Binary | `bytes` |
 | Optional | `?T` |
-| Arrays | `[]T` (variable), `[N]T` (fixed), `[.field]T` (external length) |
+| Arrays | `[]T` (variable), `[N]T` (fixed), `[.field]T` (external length) — `[]u8` encodes as CBOR byte string |
 | Composites | `struct` `enum` `union` |
 | Imports | `common = @import("common/types.cbg")` then `common.SomeType` |
 

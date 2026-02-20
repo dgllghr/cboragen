@@ -136,7 +136,7 @@ fn collectDeps(
     name_to_idx: *std.StringHashMap(usize),
 ) !void {
     switch (ty) {
-        .bool, .string, .bytes, .int, .float => {},
+        .bool, .string, .int, .float => {},
         .struct_ => |s| {
             for (s.fields) |field| {
                 try collectDeps(arena, deps, field.ty, name_to_idx);

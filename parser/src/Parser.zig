@@ -218,10 +218,6 @@ fn parseTypeExpr(self: *Parser) Error!Ast.TypeExpr {
             self.advance_();
             break :ret .{ .string = span };
         },
-        .kw_bytes => ret: {
-            self.advance_();
-            break :ret .{ .bytes = span };
-        },
         .kw_u8 => ret: {
             self.advance_();
             break :ret .{ .int = .{ .kind = .u8, .span = span } };
@@ -813,7 +809,7 @@ test "Parser - parses primitive type alias" {
 
 test "Parser - parses all primitive types" {
     const types = [_][]const u8{
-        "A = bool",   "B = string",  "C = bytes",
+        "A = bool",   "B = string",
         "D = u8",     "E = u16",     "F = u32",    "G = u64",
         "H = i8",     "I = i16",     "J = i32",    "K = i64",
         "L = f16",    "M = f32",     "N = f64",
@@ -929,7 +925,7 @@ test "Parser - parses union" {
     var result = try testParse(
         \\Message = union {
         \\    0 text: string
-        \\    1 binary: bytes
+        \\    1 binary: []u8
         \\    2 empty
         \\}
     );

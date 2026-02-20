@@ -341,7 +341,6 @@ fn emitTypeRef(self: *FsGen, ty: Ast.TypeExpr) Error!void {
     switch (ty) {
         .bool => try self.writer.writeAll("bool"),
         .string => try self.writer.writeAll("string"),
-        .bytes => try self.writer.writeAll("byte array"),
         .int => |i| {
             const name = switch (i.kind) {
                 .u8 => "byte",
@@ -391,8 +390,12 @@ fn emitTypeRef(self: *FsGen, ty: Ast.TypeExpr) Error!void {
             try self.writer.writeAll(" voption");
         },
         .array => |a| {
-            try self.emitTypeRef(a.getElement());
-            try self.writer.writeAll(" array");
+            if (isU8Array(a.getElement())) {
+                try self.writer.writeAll("byte array");
+            } else {
+                try self.emitTypeRef(a.getElement());
+                try self.writer.writeAll(" array");
+            }
         },
         .named => |n| {
             if (self.type_mappings.get(n.name)) |mapping| {
@@ -563,7 +566,6 @@ fn emitEncodeExpr(self: *FsGen, ty: Ast.TypeExpr, access: []const u8, func_prefi
     switch (ty) {
         .bool => try self.writer.print("w.WriteBool({s})", .{access}),
         .string => try self.writer.print("w.WriteString({s})", .{access}),
-        .bytes => try self.writer.print("w.WriteBytes({s})", .{access}),
         .int => |i| {
             switch (i.kind) {
                 .uvar => if (self.varint_as_number) {
@@ -609,29 +611,33 @@ fn emitEncodeExpr(self: *FsGen, ty: Ast.TypeExpr, access: []const u8, func_prefi
             try self.emitEncodeExpr(o.child, "v", func_prefix);
         },
         .array => |a| {
-            const lv = try std.fmt.allocPrint(self.arena, "_i{d}", .{self.loop_depth});
-            self.loop_depth += 1;
-            defer self.loop_depth -= 1;
-            switch (a.*) {
-                .variable => |v| {
-                    try self.writer.print("w.WriteArrayHeader(({s}).Length)\n", .{access});
-                    try self.writer.print("        for {s} = 0 to ({s}).Length - 1 do\n            ", .{ lv, access });
-                    const elem_access = try std.fmt.allocPrint(self.arena, "({s}).[{s}]", .{ access, lv });
-                    try self.emitEncodeExpr(v.element, elem_access, func_prefix);
-                },
-                .fixed => |f| {
-                    try self.writer.print("w.WriteArrayHeader({d})\n", .{f.len});
-                    try self.writer.print("        for {s} = 0 to {d} - 1 do\n            ", .{ lv, f.len });
-                    const elem_access = try std.fmt.allocPrint(self.arena, "({s}).[{s}]", .{ access, lv });
-                    try self.emitEncodeExpr(f.element, elem_access, func_prefix);
-                },
-                .external_len => |e| {
-                    try self.writer.writeAll("w.WriteByte(0x9Fuy)\n");
-                    try self.writer.print("        for {s} = 0 to ({s}).Length - 1 do\n            ", .{ lv, access });
-                    const elem_access = try std.fmt.allocPrint(self.arena, "({s}).[{s}]", .{ access, lv });
-                    try self.emitEncodeExpr(e.element, elem_access, func_prefix);
-                    try self.writer.writeAll("\n        w.WriteByte(0xFFuy)");
-                },
+            if (isU8Array(a.getElement())) {
+                try self.writer.print("w.WriteBytes({s})", .{access});
+            } else {
+                const lv = try std.fmt.allocPrint(self.arena, "_i{d}", .{self.loop_depth});
+                self.loop_depth += 1;
+                defer self.loop_depth -= 1;
+                switch (a.*) {
+                    .variable => |v| {
+                        try self.writer.print("w.WriteArrayHeader(({s}).Length)\n", .{access});
+                        try self.writer.print("        for {s} = 0 to ({s}).Length - 1 do\n            ", .{ lv, access });
+                        const elem_access = try std.fmt.allocPrint(self.arena, "({s}).[{s}]", .{ access, lv });
+                        try self.emitEncodeExpr(v.element, elem_access, func_prefix);
+                    },
+                    .fixed => |f| {
+                        try self.writer.print("w.WriteArrayHeader({d})\n", .{f.len});
+                        try self.writer.print("        for {s} = 0 to {d} - 1 do\n            ", .{ lv, f.len });
+                        const elem_access = try std.fmt.allocPrint(self.arena, "({s}).[{s}]", .{ access, lv });
+                        try self.emitEncodeExpr(f.element, elem_access, func_prefix);
+                    },
+                    .external_len => |e| {
+                        try self.writer.writeAll("w.WriteByte(0x9Fuy)\n");
+                        try self.writer.print("        for {s} = 0 to ({s}).Length - 1 do\n            ", .{ lv, access });
+                        const elem_access = try std.fmt.allocPrint(self.arena, "({s}).[{s}]", .{ access, lv });
+                        try self.emitEncodeExpr(e.element, elem_access, func_prefix);
+                        try self.writer.writeAll("\n        w.WriteByte(0xFFuy)");
+                    },
+                }
             }
         },
         .struct_ => |s| {
@@ -786,7 +792,6 @@ fn emitDecodeExpr(self: *FsGen, ty: Ast.TypeExpr, func_prefix: ?[]const u8) Erro
     switch (ty) {
         .bool => try self.writer.writeAll("r.ReadBool()"),
         .string => try self.writer.writeAll("r.ReadString()"),
-        .bytes => try self.writer.writeAll("r.ReadBytes()"),
         .int => |i| {
             switch (i.kind) {
                 .uvar => if (self.varint_as_number)
@@ -826,27 +831,31 @@ fn emitDecodeExpr(self: *FsGen, ty: Ast.TypeExpr, func_prefix: ?[]const u8) Erro
             try self.emitDecodeExpr(o.child, func_prefix);
             try self.writer.writeAll(")))");
         },
-        .array => |a| switch (a.*) {
-            .variable => |v| {
-                try self.writer.writeAll("(let _n = r.ReadArrayHeader() in Array.init _n (fun _ -> ");
-                try self.emitDecodeExpr(v.element, func_prefix);
-                try self.writer.writeAll("))");
-            },
-            .fixed => |f| {
-                try self.writer.print("(let _ = r.ReadArrayHeader() in Array.init {d} (fun _ -> ", .{f.len});
-                try self.emitDecodeExpr(f.element, func_prefix);
-                try self.writer.writeAll("))");
-            },
-            .external_len => |e| {
-                try self.writer.writeAll("(if r.ReadByte() <> 0x9Fuy then failwith \"expected indefinite array\"\n");
-                try self.writer.writeAll("         let _a = System.Collections.Generic.List<_>()\n");
-                try self.writer.writeAll("         while r.PeekByte() <> 0xFFuy do\n");
-                try self.writer.writeAll("             _a.Add(");
-                try self.emitDecodeExpr(e.element, func_prefix);
-                try self.writer.writeAll(")\n");
-                try self.writer.writeAll("         r.ReadByte() |> ignore\n");
-                try self.writer.writeAll("         _a.ToArray())");
-            },
+        .array => |a| {
+            if (isU8Array(a.getElement())) {
+                try self.writer.writeAll("r.ReadBytes()");
+            } else switch (a.*) {
+                .variable => |v| {
+                    try self.writer.writeAll("(let _n = r.ReadArrayHeader() in Array.init _n (fun _ -> ");
+                    try self.emitDecodeExpr(v.element, func_prefix);
+                    try self.writer.writeAll("))");
+                },
+                .fixed => |f| {
+                    try self.writer.print("(let _ = r.ReadArrayHeader() in Array.init {d} (fun _ -> ", .{f.len});
+                    try self.emitDecodeExpr(f.element, func_prefix);
+                    try self.writer.writeAll("))");
+                },
+                .external_len => |e| {
+                    try self.writer.writeAll("(if r.ReadByte() <> 0x9Fuy then failwith \"expected indefinite array\"\n");
+                    try self.writer.writeAll("         let _a = System.Collections.Generic.List<_>()\n");
+                    try self.writer.writeAll("         while r.PeekByte() <> 0xFFuy do\n");
+                    try self.writer.writeAll("             _a.Add(");
+                    try self.emitDecodeExpr(e.element, func_prefix);
+                    try self.writer.writeAll(")\n");
+                    try self.writer.writeAll("         r.ReadByte() |> ignore\n");
+                    try self.writer.writeAll("         _a.ToArray())");
+                },
+            }
         },
         .struct_ => |s| {
             if (self.inline_struct_names.get(s)) |sname| {
@@ -924,6 +933,11 @@ fn toPascalCase(self: *FsGen, name: []const u8) Error![]const u8 {
     if (std.ascii.isUpper(name[0])) return name;
     const upper = std.ascii.toUpper(name[0]);
     return try std.fmt.allocPrint(self.arena, "{c}{s}", .{ upper, name[1..] });
+}
+
+/// Check if a type expression is `u8` (for byte array special-casing).
+fn isU8Array(element: Ast.TypeExpr) bool {
+    return element == .int and element.int.kind == .u8;
 }
 
 /// Look up a qualified type reference in imported schemas.
