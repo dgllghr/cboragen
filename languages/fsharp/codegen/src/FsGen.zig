@@ -315,10 +315,14 @@ fn emitStructType(self: *FsGen, name: []const u8, def: *const Ast.StructDef, key
 }
 
 fn emitEnumType(self: *FsGen, name: []const u8, def: *const Ast.EnumDef, keyword_override: ?[]const u8) Error!void {
-    const kw = keyword_override orelse "type";
-    try self.writer.print("{s} {s} =\n", .{ kw, name });
+    if (keyword_override) |kw| {
+        try self.writer.print("{s} [<Struct; RequireQualifiedAccess>] {s} =\n", .{ kw, name });
+    } else {
+        try self.writer.print("[<Struct; RequireQualifiedAccess>]\ntype {s} =\n", .{name});
+    }
     for (def.variants) |v| {
-        try self.writer.print("    | {s} = {d}\n", .{ v.name, v.tag });
+        const vname = try self.toPascalCase(v.name);
+        try self.writer.print("    | {s}\n", .{vname});
     }
     try self.writer.writeAll("\n");
 }
@@ -521,7 +525,7 @@ fn emitRecursiveCodecGroup(self: *FsGen, group: topo.TypeGroup, type_map: *std.S
 fn emitEncodeBody(self: *FsGen, name: []const u8, def: Ast.TypeDef, func_prefix: ?[]const u8, indent: []const u8) Error!void {
     switch (def.ty) {
         .struct_ => |s| try self.emitStructEncodeBody(s, func_prefix, indent),
-        .enum_ => try self.emitEnumEncodeBody(indent),
+        .enum_ => |e| try self.emitEnumEncodeBody(name, e, indent),
         .union_ => |u| try self.emitUnionEncodeBody(name, u, func_prefix, indent),
         else => {
             try self.writer.print("{s}", .{indent});
@@ -552,8 +556,12 @@ fn emitStructEncodeBody(self: *FsGen, def: *const Ast.StructDef, func_prefix: ?[
     }
 }
 
-fn emitEnumEncodeBody(self: *FsGen, indent: []const u8) Error!void {
-    try self.writer.print("{s}w.WriteUvarint(uint64 value)\n", .{indent});
+fn emitEnumEncodeBody(self: *FsGen, name: []const u8, def: *const Ast.EnumDef, indent: []const u8) Error!void {
+    try self.writer.print("{s}match value with\n", .{indent});
+    for (def.variants) |v| {
+        const vname = try self.toPascalCase(v.name);
+        try self.writer.print("{s}| {s}.{s} -> w.WriteUvarint({d}UL)\n", .{ indent, name, vname, v.tag });
+    }
 }
 
 fn emitUnionEncodeBody(self: *FsGen, name: []const u8, def: *const Ast.UnionDef, func_prefix: ?[]const u8, indent: []const u8) Error!void {
@@ -703,7 +711,7 @@ fn emitCodecCall(self: *FsGen, target_name: []const u8, access: []const u8, func
 fn emitDecodeBody(self: *FsGen, name: []const u8, def: Ast.TypeDef, func_prefix: ?[]const u8, indent: []const u8) Error!void {
     switch (def.ty) {
         .struct_ => |s| try self.emitStructDecodeBody(s, func_prefix, indent),
-        .enum_ => try self.emitEnumDecodeBody(indent),
+        .enum_ => |e| try self.emitEnumDecodeBody(name, e, indent),
         .union_ => |u| try self.emitUnionDecodeBody(name, u, func_prefix, indent),
         else => {
             try self.writer.print("{s}", .{indent});
@@ -764,8 +772,13 @@ fn emitStructDecodeBody(self: *FsGen, def: *const Ast.StructDef, func_prefix: ?[
     try self.writer.writeAll(" }\n");
 }
 
-fn emitEnumDecodeBody(self: *FsGen, indent: []const u8) Error!void {
-    try self.writer.print("{s}enum<_>(int (r.ReadUvarint()))\n", .{indent});
+fn emitEnumDecodeBody(self: *FsGen, name: []const u8, def: *const Ast.EnumDef, indent: []const u8) Error!void {
+    try self.writer.print("{s}match int (r.ReadUvarint()) with\n", .{indent});
+    for (def.variants) |v| {
+        const vname = try self.toPascalCase(v.name);
+        try self.writer.print("{s}| {d} -> {s}.{s}\n", .{ indent, v.tag, name, vname });
+    }
+    try self.writer.print("{s}| t -> failwithf \"unknown {s} tag %%d\" t\n", .{ indent, name });
 }
 
 fn emitUnionDecodeBody(self: *FsGen, name: []const u8, def: *const Ast.UnionDef, func_prefix: ?[]const u8, indent: []const u8) Error!void {
