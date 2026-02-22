@@ -11,14 +11,11 @@ pub fn main() !void {
     defer std.process.argsFree(allocator, args);
 
     var filename: ?[]const u8 = null;
-    var varint_as_number = false;
 
     for (args[1..]) |arg| {
         if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
             try printUsage();
             return;
-        } else if (std.mem.eql(u8, arg, "--varint-as-number")) {
-            varint_as_number = true;
         } else if (arg.len > 0 and arg[0] == '-') {
             const stderr = std.fs.File.stderr().deprecatedWriter();
             try stderr.print("unknown option: {s}\n", .{arg});
@@ -75,9 +72,7 @@ pub fn main() !void {
     try resolveImports(allocator, &imports, &import_results, &import_sources, base_dir, schema.imports);
 
     const stdout = std.fs.File.stdout().deprecatedWriter();
-    var gen = RsGen.init(stdout.any(), schema, imports, gen_arena.allocator(), .{
-        .varint_as_number = varint_as_number,
-    });
+    var gen = RsGen.init(stdout.any(), schema, imports, gen_arena.allocator());
     gen.generate() catch |err| {
         const stderr = std.fs.File.stderr().deprecatedWriter();
         try stderr.print("error: code generation failed: {s}\n", .{@errorName(err)});
@@ -135,7 +130,6 @@ fn printUsage() !void {
         \\cboragen schema file. Output is written to stdout.
         \\
         \\Options:
-        \\  --varint-as-number   Map uvarint/ivarint to u64/i64 (default)
         \\  --help, -h           Show this help
         \\
     );

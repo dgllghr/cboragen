@@ -16,6 +16,8 @@ SPEC.md                          Wire format specification
 
 The **parser** is a reusable Zig module consumed by every language codegen. Each codegen is a standalone CLI binary that reads a `.cbg` file, resolves imports, and writes generated source code to stdout. Runtimes are separate libraries in the target language that provide low-level CBOR read/write primitives — generated code imports and calls into the runtime.
 
+Each language target has its own binary with its own CLI flags and generated code style. The point of separate binaries is to make each one idiomatic for its target language — not to enforce a uniform interface across all targets. Only add flags or features that make sense for the specific language (e.g., `--varint-as-number` exists for TypeScript because `bigint` vs `number` is a meaningful choice there, but not for Rust where varints are always `u64`/`i64`).
+
 ## Building
 
 Requires Zig 0.15+. Each component builds independently:
@@ -72,7 +74,7 @@ Create a Zig executable that depends on the parser module. The binary:
 - Parses it (and resolves `@import` chains)
 - Walks the AST and emits target-language code to **stdout**
 - Reports parse errors to **stderr** and exits with code 1
-- Supports `--varint-as-number` flag (map varints to native int instead of bigint/int64)
+- CLI flags should be language-specific — only add flags that represent meaningful choices for the target language
 
 The codegen should emit:
 - **Type definitions** for every schema type (structs, enums, unions, aliases)

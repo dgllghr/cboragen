@@ -1,6 +1,6 @@
 # cboragen
 
-Schema-driven CBOR code generator. Define types once in `.cbg` schema files, get type-safe encoders and decoders for TypeScript and F#.
+Schema-driven CBOR code generator. Define types once in `.cbg` schema files, get type-safe encoders and decoders for TypeScript, Rust, and F#.
 
 Generated code produces valid [RFC 8949](https://www.rfc-editor.org/rfc/rfc8949.html) CBOR — any generic CBOR decoder can read the output. Schema knowledge enables fixed-layout encoding and single-branch validation, so generated serializers are fast and predictable.
 
@@ -152,6 +152,47 @@ Both plugins transform `.cbg` imports directly — no separate generate step nee
 |--------|--------|
 | `varintAsNumber` | Map `uvarint`/`ivarint` to `number` instead of `bigint` |
 
+## Rust
+
+The Rust code generator produces types with `impl` blocks for encoding and decoding, using the `cboragen-runtime` crate.
+
+### Generate
+
+```sh
+cboragen-rs schema.cbg > src/schema.rs
+```
+
+### Use
+
+Generated types have `encode`, `encode_with`, `decode`, and `decode_with` methods:
+
+```rust
+use cboragen_runtime::{Writer, Reader};
+
+let user = User {
+    id: 1,
+    name: "Alice".to_string(),
+    email: Some("alice@example.com".to_string()),
+    role: Role::Admin,
+    tags: vec!["staff".to_string()],
+};
+
+let bytes: Vec<u8> = user.encode();
+let decoded: User = User::decode(&bytes);
+
+// Or use a shared Writer/Reader for multiple values:
+let mut w = Writer::new();
+user.encode_with(&mut w);
+let data = w.finish();
+```
+
+The runtime crate is at `languages/rust/runtime/`. Add it as a dependency:
+
+```toml
+[dependencies]
+cboragen-runtime = { path = "path/to/cboragen/languages/rust/runtime" }
+```
+
 ## F#
 
 The F# code generator produces modules that use `Cboragen.Cbor` for encoding and decoding.
@@ -174,6 +215,9 @@ languages/
     runtime/                     @cboragen/runtime npm package
     tools/                       cboragen npm package (CLI, config, bundler plugins)
     benchmark/                   Browser-based encode/decode benchmarks
+  rust/
+    codegen/                     Zig executable — reads .cbg, emits Rust
+    runtime/                     cboragen-runtime Rust crate
   fsharp/
     codegen/                     Zig executable — reads .cbg, emits F#
     runtime/                     Cboragen.Cbor F# module
@@ -190,6 +234,9 @@ cd parser && zig build
 
 # TypeScript code generator
 cd languages/typescript/codegen && zig build
+
+# Rust code generator
+cd languages/rust/codegen && zig build
 
 # F# code generator
 cd languages/fsharp/codegen && zig build

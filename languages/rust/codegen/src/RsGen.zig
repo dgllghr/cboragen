@@ -7,7 +7,6 @@ const RsGen = @This();
 writer: std.io.AnyWriter,
 schema: Ast.Schema,
 arena: std.mem.Allocator,
-varint_as_number: bool,
 loop_depth: u32,
 
 /// Namespace → Schema for imported schemas.
@@ -27,22 +26,16 @@ const InlineStruct = struct { name: []const u8, def: *const Ast.StructDef };
 const InlineEnum = struct { name: []const u8, def: *const Ast.EnumDef };
 const InlineUnion = struct { name: []const u8, def: *const Ast.UnionDef };
 
-pub const Options = struct {
-    varint_as_number: bool = false,
-};
-
 pub fn init(
     writer: std.io.AnyWriter,
     schema: Ast.Schema,
     imports: std.StringHashMap(Ast.Schema),
     arena: std.mem.Allocator,
-    options: Options,
 ) RsGen {
     return .{
         .writer = writer,
         .schema = schema,
         .arena = arena,
-        .varint_as_number = options.varint_as_number,
         .loop_depth = 0,
         .imports = imports,
         .inline_struct_names = std.AutoHashMap(*const Ast.StructDef, []const u8).init(arena),
