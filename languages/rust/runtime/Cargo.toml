@@ -1,0 +1,5 @@
+[package]
+name = "cboragen-runtime"
+version = "0.1.0"
+edition = "2021"
+description = "CBOR encode/decode runtime for cboragen generated code"

@@ -1,0 +1,14 @@
+.{
+    .name = .cboragen_rs,
+    .version = "0.1.0",
+    .fingerprint = 0x1bf21fc112f5539d,
+    .minimum_zig_version = "0.15.0",
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+    .dependencies = .{
+        .parser = .{ .path = "../../../parser" },
+    },
+}
